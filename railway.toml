@@ -2,8 +2,8 @@
 
 [build]
 builder = "NIXPACKS"
-# --include=dev so TypeScript / Vite are available (they live in devDependencies)
-buildCommand = "npm ci --include=dev && npm run build"
+# Install already ran in Nixpacks; do NOT run npm ci again (exit 240).
+buildCommand = "npm run build"
 
 [deploy]
 startCommand = "npm start"
