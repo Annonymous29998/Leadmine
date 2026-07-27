@@ -1,0 +1,13 @@
+# Railway — LeadMine Extractor (always-on Node API + SPA)
+
+[build]
+builder = "NIXPACKS"
+# --include=dev so TypeScript / Vite are available (they live in devDependencies)
+buildCommand = "npm ci --include=dev && npm run build"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

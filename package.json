@@ -1,0 +1,30 @@
+{
+  "name": "leadmin-extractor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "LeadMine Extractor — web email extraction tool",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,green \"npm run dev -w @leadmin/api\" \"npm run dev -w @leadmin/web\"",
+    "dev:api": "npm run dev -w @leadmin/api",
+    "dev:web": "npm run dev -w @leadmin/web",
+    "build": "npm run build -w @leadmin/web && npm run build -w @leadmin/api",
+    "start": "npm run start -w @leadmin/api",
+    "test": "npm run test -w @leadmin/api",
+    "test:unit": "npm run test:unit -w @leadmin/api",
+    "lint": "npm run lint -w @leadmin/api && npm run lint -w @leadmin/web",
+    "smoke": "npm run smoke -w @leadmin/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.2"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.1"
+  }
+}
