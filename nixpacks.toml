@@ -1,3 +1,2 @@
-# Keep nixpacks unused; Railway uses Dockerfile via railway.toml
 [variables]
-NIXPACKS_NODE_VERSION = "20"
+NIXPACKS_NODE_VERSION = "22"
