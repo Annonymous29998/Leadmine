@@ -7,7 +7,9 @@ import { runExtraction, type ExtractBody, type ExtractResult } from './extract-j
 import { leadQualityScore, validateEmailAddress } from './validate.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
-const DEFAULT_EXPORTS = path.join(ROOT, 'exports');
+const DEFAULT_EXPORTS =
+  process.env.EXPORTS_DIR?.trim() ||
+  (process.env.RAILWAY_ENVIRONMENT ? '/tmp/leadmin-exports' : path.join(ROOT, 'exports'));
 
 export type SniffyResultRow = {
   timestamp: string;

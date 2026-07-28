@@ -1,1 +1,1 @@
-web: node /app/apps/api/dist/index.js
+web: /app/scripts/railway-entrypoint.sh

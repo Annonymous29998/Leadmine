@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
-import Fastify from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
 import { z } from 'zod';
@@ -22,22 +22,14 @@ import {
   stopActiveJob,
 } from './jobs.js';
 
-export async function startFullApp(opts: {
-  port: number;
-  host?: string;
-  root: string;
-  exportsDir: string;
-}): Promise<void> {
+export async function registerApp(
+  app: FastifyInstance,
+  opts: { root: string; exportsDir: string },
+): Promise<void> {
   const DEFAULT_EXPORTS = opts.exportsDir;
   const ROOT = opts.root;
-  const PORT = opts.port;
-  const HOST = opts.host || '::';
 
-  const app = Fastify({ logger: true });
   await app.register(cors, { origin: true });
-
-  app.get('/api/health', async () => ({ ok: true, name: 'LeadMine Extractor', phase: 'ready' }));
-  app.get('/health', async () => ({ ok: true, phase: 'ready' }));
 
   const extractBody = z.object({
     subject: z.string().min(1),
@@ -403,16 +395,13 @@ export async function startFullApp(opts: {
     console.warn(`Web UI missing at ${WEB_DIST} — API-only mode`);
   }
 
-  await app.listen({ port: PORT, host: HOST });
-
   const hasSerper = Boolean(process.env.SERPER_API_KEY?.trim());
   const hasSerp = Boolean(process.env.SERPAPI_KEY?.trim());
   const nets = Object.values(os.networkInterfaces()).flat().filter(Boolean);
   const lan = nets.find(
     (n) => n && !n.internal && String(n.family) === 'IPv4',
   )?.address;
-  console.log(`LeadMine API ready on ${HOST}:${PORT}`);
-  if (lan) console.log(`On your network → http://${lan}:${PORT}`);
+  if (lan) console.log(`On your network → http://${lan}`);
   console.log(
     `Search: ${
       hasSerper && hasSerp
