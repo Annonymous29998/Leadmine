@@ -1,13 +1,10 @@
 /**
- * Boot health on PORT immediately (plain Node HTTP), then start Fastify.
- * This keeps Railway healthchecks green even if heavy imports are slow/crash.
+ * LeadMine API entry — listen once on :: (IPv6 dual-stack) for Railway.
  */
 import { config } from 'dotenv';
 import path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import http from 'node:http';
-import { once } from 'node:events';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../../..');
@@ -37,8 +34,13 @@ mkdirSync(DEFAULT_EXPORTS, { recursive: true });
 const parsedPort = Number.parseInt(String(process.env.PORT || '3002'), 10);
 const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3002;
 
+// Railway edge talks to containers over IPv6. Binding 0.0.0.0 (IPv4-only)
+// makes healthchecks return "service unavailable" even when the app is up.
+const HOST = process.env.HOST || '::';
+
 console.log('[boot]', {
   PORT,
+  HOST,
   cwd: process.cwd(),
   root: ROOT,
   node: process.version,
@@ -46,37 +48,10 @@ console.log('[boot]', {
   hasSerpapi: Boolean(process.env.SERPAPI_KEY?.trim()),
 });
 
-function isHealth(url: string | undefined): boolean {
-  if (!url) return false;
-  const pathOnly = url.split('?')[0];
-  return pathOnly === '/api/health' || pathOnly === '/health';
-}
-
-const bootServer = http.createServer((req, res) => {
-  if (isHealth(req.url)) {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, name: 'LeadMine Extractor', phase: 'booting' }));
-    return;
-  }
-  res.writeHead(503, { 'content-type': 'application/json' });
-  res.end(JSON.stringify({ error: 'starting' }));
-});
-
-bootServer.listen(PORT, '0.0.0.0');
-await once(bootServer, 'listening');
-console.log(`LeadMine health listener on 0.0.0.0:${PORT}`);
-
 try {
   const { startFullApp } = await import('./attach.js');
-  bootServer.close();
-  await once(bootServer, 'close');
-  await startFullApp({ port: PORT, root: ROOT, exportsDir: DEFAULT_EXPORTS });
+  await startFullApp({ port: PORT, host: HOST, root: ROOT, exportsDir: DEFAULT_EXPORTS });
 } catch (err) {
-  console.error('Failed to start full app — keeping health listener up:', err);
-  // Health server already closed? If close() ran, re-bind health so Railway stays green.
-  if (!bootServer.listening) {
-    bootServer.listen(PORT, '0.0.0.0');
-    await once(bootServer, 'listening');
-    console.error('Health-only mode active. Check Deploy Logs for the attach error above.');
-  }
+  console.error('Failed to start LeadMine:', err);
+  process.exit(1);
 }

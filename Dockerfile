@@ -17,11 +17,14 @@ COPY . .
 
 RUN npm run build \
   && test -f /app/apps/api/dist/index.js \
+  && test -f /app/apps/api/dist/attach.js \
   && test -f /app/apps/web/dist/index.html \
-  && npm prune --omit=dev
+  && npm prune --omit=dev \
+  && node -e "import('fastify').then(()=>console.log('fastify ok'))"
 
 ENV NODE_ENV=production
+# Railway injects PORT. HOST=:: so healthchecks reach the process over IPv6.
+ENV HOST=::
 EXPOSE 3000
 
-# Railway injects PORT — do not hardcode listen port in CMD
 CMD ["node", "/app/apps/api/dist/index.js"]
