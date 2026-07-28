@@ -458,7 +458,7 @@ export function ExtractorPage() {
                 </div>
               </div>
 
-              <div className="sniffy-hint">Proxies are optional (same as Sniffy).</div>
+              <div className="sniffy-hint">Proxies are optional.</div>
 
               <div className="sniffy-row" style={{ marginTop: '1rem' }}>
                 <label className="sniffy-switch">

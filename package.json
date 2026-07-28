@@ -11,7 +11,7 @@
     "dev:api": "npm run dev -w @leadmin/api",
     "dev:web": "npm run dev -w @leadmin/web",
     "build": "npm run build -w @leadmin/web && npm run build -w @leadmin/api",
-    "start": "npm run start -w @leadmin/api",
+    "start": "node apps/api/dist/index.js",
     "test": "npm run test -w @leadmin/api",
     "test:unit": "npm run test:unit -w @leadmin/api",
     "lint": "npm run lint -w @leadmin/api && npm run lint -w @leadmin/web",

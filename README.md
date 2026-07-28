@@ -30,28 +30,29 @@ API serves the SPA and listens on `0.0.0.0:$PORT` (default `3002`).
 
 See steps below after pushing to GitHub. Required files already in the repo:
 
-- `railway.toml` — build + start + healthcheck  
-- `nixpacks.toml` — Node 20 + install devDependencies for build  
-- `Procfile` — `web: npm start`  
-- `.nvmrc` — Node 20  
+- `Dockerfile` — Node 20 multi-stage build (Railway uses this)
+- `railway.toml` — Dockerfile builder + healthcheck + start command
+- `Procfile` — `web: node apps/api/dist/index.js`
+- `.nvmrc` — Node 20 
 
 ### Railway checklist
 
-1. Push this repo to GitHub (already configured for `Annonymous29998/Leadmine`).
+1. Push this repo to GitHub (`Annonymous29998/Leadmine`).
 2. Open [Railway](https://railway.app) → **New Project** → **Deploy from GitHub repo** → select **Leadmine**.
 3. Open the service → **Variables** and add:
    - `SERPER_API_KEY` = your Serper key (recommended)
    - `SERPAPI_KEY` = your SerpAPI key (optional; both = more URLs)
    - Do **not** set `PORT` — Railway injects it automatically.
 4. **Settings → Networking** → **Generate Domain** (public HTTPS URL).
-5. Wait for deploy. Healthcheck hits `/api/health`.
+5. Wait for deploy. Image builds via `Dockerfile`; healthcheck hits `/api/health`.
 6. Open the Railway URL — UI + API are on the same origin.
 
-### If the build fails
+### If the build / healthcheck fails
 
-- Confirm Node 20 (`.nvmrc` / `nixpacks.toml`).
-- Confirm root `package-lock.json` is committed (workspaces need `npm ci`).
-- Rebuild after env vars are set (keys are runtime-only; missing keys won’t fail the build).
+- Confirm deploy uses **Dockerfile** (not Nixpacks).
+- Confirm root `package-lock.json` is committed.
+- Check **Deploy Logs** (not only Build Logs) for crash messages.
+- Rebuild after env vars are set (keys are runtime-only).
 
 ## Env vars
 

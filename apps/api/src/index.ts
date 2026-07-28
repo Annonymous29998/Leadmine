@@ -1,20 +1,8 @@
 import { config } from 'dotenv';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '../../..');
-const ENV_PATH = path.join(ROOT, '.env');
-const envResult = config({ path: ENV_PATH });
-if (envResult.error) {
-  console.warn(`Could not load .env from ${ENV_PATH}:`, envResult.error.message);
-} else {
-  console.log(
-    `.env loaded from ${ENV_PATH} (exists=${existsSync(ENV_PATH)}, SERPAPI_KEY=${process.env.SERPAPI_KEY?.trim() ? 'set' : 'empty'})`,
-  );
-}
-
+import os from 'node:os';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import fastifyStatic from '@fastify/static';
@@ -35,10 +23,33 @@ import {
   startJob,
   stopActiveJob,
 } from './jobs.js';
-import os from 'node:os';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '../../..');
+const ENV_PATH = path.join(ROOT, '.env');
+if (existsSync(ENV_PATH)) {
+  const envResult = config({ path: ENV_PATH });
+  if (envResult.error) {
+    console.warn(`Could not load .env from ${ENV_PATH}:`, envResult.error.message);
+  } else {
+    console.log(`.env loaded from ${ENV_PATH}`);
+  }
+} else {
+  console.log('No .env file (using process env — normal on Railway)');
+}
+
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException', err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection', err);
+});
 
 const DEFAULT_EXPORTS = path.join(ROOT, 'exports');
-const PORT = Number(process.env.PORT || 3002);
+mkdirSync(DEFAULT_EXPORTS, { recursive: true });
+
+const parsedPort = Number.parseInt(String(process.env.PORT || '3002'), 10);
+const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3002;
 
 const extractBody = z.object({
   subject: z.string().min(1),
@@ -423,12 +434,18 @@ if (existsSync(WEB_DIST)) {
   });
 }
 
-await app.listen({ port: PORT, host: '0.0.0.0' });
+try {
+  await app.listen({ port: PORT, host: '0.0.0.0' });
+} catch (err) {
+  console.error('Failed to bind HTTP server', { PORT, err });
+  process.exit(1);
+}
+
 const hasSerper = Boolean(process.env.SERPER_API_KEY?.trim());
 const hasSerp = Boolean(process.env.SERPAPI_KEY?.trim());
 const nets = Object.values(os.networkInterfaces()).flat().filter(Boolean);
 const lan = nets.find((n) => n && n.family === 'IPv4' && !n.internal)?.address;
-console.log(`LeadMine API → http://localhost:${PORT}`);
+console.log(`LeadMine API → http://0.0.0.0:${PORT}`);
 if (lan) console.log(`On your network → http://${lan}:${PORT}`);
 console.log(
   `Search: ${
@@ -442,7 +459,7 @@ console.log(
   }`,
 );
 if (existsSync(WEB_DIST)) {
-  console.log(`Web UI served from apps/web/dist (open the URLs above — not limited to localhost)`);
+  console.log(`Web UI served from ${WEB_DIST}`);
 } else {
-  console.log(`Dev UI: run npm run dev (Vite on :5174). For single-URL web: npm run build && npm start`);
+  console.warn(`Web UI missing at ${WEB_DIST} — API-only mode`);
 }

@@ -1,17 +1,15 @@
-/** Lightweight text pull from PDF / Office bytes (Sniffy-style). */
-
-import { PDFParse } from 'pdf-parse';
+/** Lightweight text pull from PDF / Office bytes. */
 
 export async function extractTextFromPdf(buf: Buffer): Promise<string> {
-  const parser = new PDFParse({ data: buf.subarray(0, Math.min(buf.length, 4_000_000)) });
+  const slice = buf.subarray(0, Math.min(buf.length, 4_000_000));
   try {
-    const result = await parser.getText({ first: 1, last: 25 });
+    const mod = await import('pdf-parse');
+    const pdfParse = (mod as { default: (b: Buffer) => Promise<{ text?: string }> }).default;
+    const result = await pdfParse(slice);
     return result.text || '';
   } catch {
     // Fallback: emails often survive as literal strings in PDF streams
-    return buf.toString('latin1');
-  } finally {
-    await parser.destroy().catch(() => undefined);
+    return slice.toString('latin1');
   }
 }
 
