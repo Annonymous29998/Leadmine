@@ -1,3 +1,5 @@
+const AUTH_KEY = 'leadmin_auth_token';
+
 export type ExtractedEmail = {
   email: string;
   domain: string;
@@ -34,22 +36,72 @@ export type ExtractResult = {
   params: SearchParams;
 };
 
+export function getAuthToken(): string | null {
+  try {
+    return localStorage.getItem(AUTH_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthToken(token: string) {
+  localStorage.setItem(AUTH_KEY, token);
+}
+
+export function clearAuthToken() {
+  try {
+    localStorage.removeItem(AUTH_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  const token = getAuthToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(extra || {}),
+  };
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init?.headers || {}),
-    },
+    headers: authHeaders(init?.headers),
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    clearAuthToken();
+    const onLogin = typeof window !== 'undefined' && window.location.pathname.startsWith('/login');
+    if (!onLogin && !url.includes('/api/auth/login')) {
+      window.location.assign('/login');
+    }
+  }
   if (!res.ok) {
-    const err = data.error;
+    const err = (data as { error?: unknown }).error;
     throw new Error(
-      typeof err === 'string' ? err : err?.message || JSON.stringify(err) || res.statusText,
+      typeof err === 'string' ? err : (err as { message?: string })?.message || JSON.stringify(err) || res.statusText,
     );
   }
   return data as T;
+}
+
+/** Authenticated fetch for binary downloads (CSV/TXT). */
+export async function authFetch(url: string, init?: RequestInit): Promise<Response> {
+  const token = getAuthToken();
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers || {}),
+    },
+  });
+  if (res.status === 401) {
+    clearAuthToken();
+    if (typeof window !== 'undefined') window.location.assign('/login');
+  }
+  return res;
 }
 
 function parseSseChunk(
@@ -72,12 +124,24 @@ function parseSseChunk(
 }
 
 export const api = {
+  login: (email: string, password: string) =>
+    request<{ ok: boolean; token: string; email: string }>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  me: () => request<{ ok: boolean; email: string }>('/api/auth/me'),
+
+  authStatus: () =>
+    request<{ configured: boolean; loginRequired: boolean }>('/api/auth/status'),
+
   settings: () =>
     request<{
       hasSerpapi: boolean;
       hasGoogleCse: boolean;
       usesDdgFallback: boolean;
       warning: string | null;
+      loginRequired?: boolean;
     }>('/api/settings'),
 
   extract: (body: Record<string, unknown>, signal?: AbortSignal) =>
@@ -93,10 +157,15 @@ export const api = {
   ): Promise<ExtractResult> => {
     const res = await fetch('/api/extract/stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders(),
       body: JSON.stringify(body),
       signal: opts.signal,
     });
+
+    if (res.status === 401) {
+      clearAuthToken();
+      window.location.assign('/login');
+    }
 
     if (!res.ok || !res.body) {
       let message = res.statusText;

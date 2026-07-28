@@ -58,6 +58,9 @@ console.log('[boot]', {
   railway: Boolean(process.env.RAILWAY_ENVIRONMENT),
   hasSerper: Boolean(process.env.SERPER_API_KEY?.trim()),
   hasSerpapi: Boolean(process.env.SERPAPI_KEY?.trim()),
+  loginConfigured: Boolean(
+    process.env.ADMIN_EMAIL?.trim() && process.env.ADMIN_PASSWORD,
+  ),
 });
 
 const app = Fastify({ logger: true });

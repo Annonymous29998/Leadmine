@@ -60,6 +60,9 @@ See steps below after pushing to GitHub. Required files already in the repo:
 |----------|----------|--------|
 | `SERPER_API_KEY` | Recommended | [serper.dev](https://serper.dev/) |
 | `SERPAPI_KEY` | Optional | [serpapi.com](https://serpapi.com/) |
+| `ADMIN_EMAIL` | Required for login | e.g. `admin@leadmine.com` |
+| `ADMIN_PASSWORD` | Required for login | Your login password |
+| `AUTH_SECRET` | Optional | Session signing secret |
 | `PORT` | Auto on Railway | Local default `3002` |
 | `ENABLE_SMTP_CHECK` | Optional | Set `1` for SMTP probe |
 

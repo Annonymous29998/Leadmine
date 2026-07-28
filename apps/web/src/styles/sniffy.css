@@ -407,6 +407,7 @@ body:has(.sniffy-root),
 .sniffy-topnav {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 0.75rem;
   margin-bottom: 1rem;
   font-size: 0.75rem;
@@ -417,4 +418,48 @@ body:has(.sniffy-root),
 }
 .sniffy-topnav a:hover {
   color: var(--sn-primary);
+}
+.sniffy-topnav button {
+  color: var(--sn-muted);
+  background: transparent;
+  border: 1px solid var(--sn-border);
+  cursor: pointer;
+  font-family: inherit;
+}
+.sniffy-topnav button:hover {
+  color: var(--sn-primary);
+  border-color: var(--sn-primary);
+}
+
+.sniffy-password-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.sniffy-password-wrap .sniffy-input {
+  width: 100%;
+  padding-right: 4.25rem;
+}
+.sniffy-password-toggle {
+  position: absolute;
+  right: 0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: 1px solid var(--sn-border);
+  color: var(--sn-muted);
+  font-family: inherit;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+}
+.sniffy-password-toggle:hover:not(:disabled) {
+  color: var(--sn-primary);
+  border-color: var(--sn-primary);
+}
+.sniffy-password-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { api } from '@/lib/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { api, authFetch, clearAuthToken } from '@/lib/api';
 import { useAppStore } from '@/stores/app';
 import '@/styles/sniffy.css';
 
@@ -26,6 +26,7 @@ const LOGO = ` _      _____    _    ____    __  __ ___ _   _ _____
 |_____||_____/_/   \\_\\____/  |_|  |_|___|_| \\_|_____|`;
 
 export function ExtractorPage() {
+  const navigate = useNavigate();
   const { domainsDraft, setDomainsDraft, setEmailsFromSniffy } = useAppStore();
 
   const [searchTerms, setSearchTerms] = useState('');
@@ -141,7 +142,7 @@ export function ExtractorPage() {
               // Sniffy-style: auto-download results to the browser
               void (async () => {
                 try {
-                  const res = await fetch('/api/download_results?format=csv');
+                  const res = await authFetch('/api/download_results?format=csv');
                   if (!res.ok) return;
                   const blob = await res.blob();
                   const cd = res.headers.get('Content-Disposition') || '';
@@ -175,7 +176,7 @@ export function ExtractorPage() {
               setShowDownload(true);
               void (async () => {
                 try {
-                  const res = await fetch('/api/download_results?format=csv');
+                  const res = await authFetch('/api/download_results?format=csv');
                   if (!res.ok) return;
                   const blob = await res.blob();
                   const url = URL.createObjectURL(blob);
@@ -302,7 +303,7 @@ export function ExtractorPage() {
 
   const onDownload = async (format: 'csv' | 'txt' | 'legitimate' | 'json' = 'csv') => {
     try {
-      const res = await fetch(`/api/download_results?format=${format}`);
+      const res = await authFetch(`/api/download_results?format=${format}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
         throw new Error(
@@ -356,6 +357,17 @@ export function ExtractorPage() {
           <Link to="/settings">Settings</Link>
           <Link to="/help">Help</Link>
           <Link to="/search">Classic UI</Link>
+          <button
+            type="button"
+            className="sniffy-btn sniffy-btn-ghost"
+            style={{ marginLeft: 'auto', padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+            onClick={() => {
+              clearAuthToken();
+              navigate('/login', { replace: true });
+            }}
+          >
+            Sign out
+          </button>
         </div>
 
         <h1 className="sniffy-logo">

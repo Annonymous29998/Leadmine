@@ -21,6 +21,14 @@ import {
   startJob,
   stopActiveJob,
 } from './jobs.js';
+import {
+  authConfigured,
+  issueToken,
+  requireAuth,
+  verifyCredentials,
+  verifyToken,
+  readBearer,
+} from './auth.js';
 
 export async function registerApp(
   app: FastifyInstance,
@@ -30,6 +38,43 @@ export async function registerApp(
   const ROOT = opts.root;
 
   await app.register(cors, { origin: true });
+
+  // —— Auth (does not affect /api/health) ——
+  app.get('/api/auth/status', async () => ({
+    configured: authConfigured(),
+    loginRequired: authConfigured(),
+  }));
+
+  app.post('/api/auth/login', async (req, reply) => {
+    if (!authConfigured()) {
+      return reply.status(503).send({
+        error: 'Login is not configured. Set ADMIN_EMAIL and ADMIN_PASSWORD on the server.',
+      });
+    }
+    const body = z
+      .object({
+        email: z.string().min(1),
+        password: z.string().min(1),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: 'Email and password are required.' });
+    }
+    if (!verifyCredentials(body.data.email, body.data.password)) {
+      return reply.status(401).send({ error: 'Invalid email or password.' });
+    }
+    const email = body.data.email.trim().toLowerCase();
+    const token = issueToken(email);
+    return { ok: true, token, email };
+  });
+
+  app.get('/api/auth/me', async (req, reply) => {
+    const token = readBearer(req);
+    if (!token) return reply.status(401).send({ error: 'Not signed in' });
+    const payload = verifyToken(token);
+    if (!payload) return reply.status(401).send({ error: 'Session expired' });
+    return { ok: true, email: payload.email };
+  });
 
   const extractBody = z.object({
     subject: z.string().min(1),
@@ -83,10 +128,11 @@ export async function registerApp(
       usesDdgFallback: false,
       searchProvider: serper && serpapi ? 'serper+serpapi' : serper ? 'serper' : serpapi ? 'serpapi' : 'none',
       warning: ready ? null : 'Add SERPER_API_KEY and/or SERPAPI_KEY to .env to run extraction',
+      loginRequired: authConfigured(),
     };
   });
 
-  app.post('/api/extract', async (req, reply) => {
+  app.post('/api/extract', { preHandler: requireAuth }, async (req, reply) => {
     const parsed = extractBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() });
@@ -117,7 +163,7 @@ export async function registerApp(
     }
   });
 
-  app.post('/api/extract/stream', async (req, reply) => {
+  app.post('/api/extract/stream', { preHandler: requireAuth }, async (req, reply) => {
     const parsed = extractBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() });
@@ -167,7 +213,7 @@ export async function registerApp(
     }
   });
 
-  app.post('/api/export', async (req, reply) => {
+  app.post('/api/export', { preHandler: requireAuth }, async (req, reply) => {
     const parsed = exportBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() });
@@ -229,7 +275,7 @@ export async function registerApp(
     urlList: z.string().optional(),
   });
 
-  app.post('/api/start_extraction', async (req, reply) => {
+  app.post('/api/start_extraction', { preHandler: requireAuth }, async (req, reply) => {
     const parsed = sniffyStartBody.safeParse(req.body);
     if (!parsed.success) {
       return reply.status(400).send({ error: parsed.error.flatten() });
@@ -282,7 +328,7 @@ export async function registerApp(
     }
   });
 
-  app.get('/api/get_progress', async () => {
+  app.get('/api/get_progress', { preHandler: requireAuth }, async () => {
     const job = getActiveJob();
     if (!job) {
       return {
@@ -296,9 +342,9 @@ export async function registerApp(
     return getProgressPayload(job);
   });
 
-  app.post('/api/stop_extraction', async () => stopActiveJob());
+  app.post('/api/stop_extraction', { preHandler: requireAuth }, async () => stopActiveJob());
 
-  app.get('/api/download_results', async (req, reply) => {
+  app.get('/api/download_results', { preHandler: requireAuth }, async (req, reply) => {
     const job = getActiveJob();
     if (!job?.results.length) {
       return reply.status(404).send({ error: 'No results available' });

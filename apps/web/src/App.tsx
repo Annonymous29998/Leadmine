@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { RequireAuth } from '@/components/RequireAuth';
 import { ExtractorPage } from '@/pages/ExtractorPage';
+import { LoginPage } from '@/pages/LoginPage';
 import { SearchPage } from '@/pages/SearchPage';
 import { ProgressPage } from '@/pages/ProgressPage';
 import { ResultsPage } from '@/pages/ResultsPage';
@@ -12,17 +14,18 @@ export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Sniffy-style full-page extractor (no sidebar) */}
-        <Route path="/" element={<ExtractorPage />} />
+        <Route path="/login" element={<LoginPage />} />
 
-        {/* Classic LeadMine chrome */}
-        <Route element={<AppLayout />}>
-          <Route path="search" element={<SearchPage />} />
-          <Route path="progress" element={<ProgressPage />} />
-          <Route path="results" element={<ResultsPage />} />
-          <Route path="export" element={<ExportPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="help" element={<HelpPage />} />
+        <Route element={<RequireAuth />}>
+          <Route path="/" element={<ExtractorPage />} />
+          <Route element={<AppLayout />}>
+            <Route path="search" element={<SearchPage />} />
+            <Route path="progress" element={<ProgressPage />} />
+            <Route path="results" element={<ResultsPage />} />
+            <Route path="export" element={<ExportPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="help" element={<HelpPage />} />
+          </Route>
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
