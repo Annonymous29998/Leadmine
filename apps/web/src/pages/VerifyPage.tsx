@@ -11,8 +11,12 @@ const LOGO = ` _      _____    _    ____    __  __ ___ _   _ _____
 
 type Counts = { reachable: number; invalid: number; unknown: number };
 
+const FILE_ACCEPT =
+  '.txt,.csv,.tsv,.json,.html,.htm,.md,.log,.eml,.xml,.lst,text/plain,text/csv,application/json';
+
 export function VerifyPage() {
   const [text, setText] = useState('');
+  const [fileName, setFileName] = useState('');
   const [smtp, setSmtp] = useState(true);
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -23,6 +27,36 @@ export function VerifyPage() {
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
   const pollRef = useRef<number | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const onFile = async (file: File | null) => {
+    if (!file) {
+      setFileName('');
+      return;
+    }
+    try {
+      const content = await file.text();
+      if (!content.trim()) {
+        setError('File is empty or unreadable as text. Use .txt, .csv, or similar.');
+        return;
+      }
+      // Binary-ish garbage (e.g. xlsx/pdf without text extract)
+      const sample = content.slice(0, 200);
+      const nulls = (sample.match(/\0/g) || []).length;
+      if (nulls > 5 || sample.startsWith('PK\u0003\u0004')) {
+        setError(
+          `“${file.name}” looks like a binary Office/PDF file. Export as .csv or .txt first.`,
+        );
+        return;
+      }
+      setFileName(file.name);
+      setText(content);
+      setError('');
+      setStatus(`Loaded ${file.name} (${Math.round(file.size / 1024)} KB)`);
+    } catch {
+      setError('Could not read that file. Try a .txt or .csv export.');
+    }
+  };
 
   const stopPoll = () => {
     if (pollRef.current) {
@@ -69,6 +103,10 @@ export function VerifyPage() {
 
   const onStart = async (e: FormEvent) => {
     e.preventDefault();
+    if (!text.trim()) {
+      setError('Upload a file or paste at least one email.');
+      return;
+    }
     setError('');
     setDone(false);
     setStatus('Starting…');
@@ -149,24 +187,71 @@ export function VerifyPage() {
           </div>
           <div className="sniffy-card-body">
             <p className="sniffy-hint" style={{ marginBottom: '1rem' }}>
-              Checks syntax, MX (DNS), role/disposable filters, and SMTP mailbox probe when
-              possible — same idea as Hazmat / Reacher. Download <strong>reachable</strong> emails
-              before campaigns to protect your SMTP.
+              Upload a list or paste emails. Checks syntax, MX (DNS), role/disposable filters, and
+              SMTP when possible — same idea as Hazmat. Download <strong>reachable</strong> before
+              campaigns.
             </p>
 
             <form onSubmit={onStart}>
+              <label className="sniffy-label" htmlFor="verify-file">
+                Upload list (.txt, .csv, .json, .html, …)
+              </label>
+              <div className="sniffy-actions" style={{ marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                <input
+                  ref={fileRef}
+                  id="verify-file"
+                  type="file"
+                  accept={FILE_ACCEPT}
+                  disabled={running}
+                  style={{ display: 'none' }}
+                  onChange={(ev) => {
+                    void onFile(ev.target.files?.[0] ?? null);
+                    ev.target.value = '';
+                  }}
+                />
+                <button
+                  type="button"
+                  className="sniffy-btn sniffy-btn-primary"
+                  disabled={running}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  Choose file
+                </button>
+                {fileName ? (
+                  <span className="sniffy-badge sniffy-badge-ok">{fileName}</span>
+                ) : (
+                  <span className="sniffy-hint">or paste below</span>
+                )}
+                {fileName ? (
+                  <button
+                    type="button"
+                    className="sniffy-btn sniffy-btn-ghost"
+                    disabled={running}
+                    onClick={() => {
+                      setFileName('');
+                      setText('');
+                      setStatus('');
+                    }}
+                  >
+                    Clear file
+                  </button>
+                ) : null}
+              </div>
+
               <label className="sniffy-label" htmlFor="verify-list">
-                Email list (one per line)
+                Email list (paste or loaded from file)
               </label>
               <textarea
                 id="verify-list"
                 className="sniffy-input"
                 rows={12}
                 value={text}
-                onChange={(ev) => setText(ev.target.value)}
-                placeholder={'john.smith@company.com\njane.doe@agency.org\ninfo@skip-me.com'}
+                onChange={(ev) => {
+                  setText(ev.target.value);
+                  if (fileName) setFileName('');
+                }}
+                placeholder={'Upload a file, or paste:\njohn.smith@company.com\njane.doe@agency.org'}
                 disabled={running}
-                required
               />
 
               <label className="sniffy-switch" style={{ marginTop: '0.85rem' }}>

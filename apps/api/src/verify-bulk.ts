@@ -144,16 +144,22 @@ async function getMxHost(domain: string): Promise<string | null> {
   }
 }
 
+const EMAIL_IN_TEXT =
+  /[a-zA-Z0-9](?:[a-zA-Z0-9._%+-]{0,62}[a-zA-Z0-9])?@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+/g;
+
+/** Parse paste or uploaded file text (txt/csv/html/json/etc.) into unique emails. */
 export function parseEmailList(text: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const raw of text.split(/[\r\n,;]+/)) {
+  const add = (raw: string) => {
     const e = raw.trim().toLowerCase().replace(/^<|>$/g, '');
-    if (!e.includes('@')) continue;
-    if (seen.has(e)) continue;
+    if (!e.includes('@') || e.length > 254) return;
+    if (seen.has(e)) return;
     seen.add(e);
     out.push(e);
-  }
+  };
+  for (const raw of text.split(/[\r\n,;|\t]+/)) add(raw);
+  for (const m of text.matchAll(EMAIL_IN_TEXT)) add(m[0]);
   return out;
 }
 

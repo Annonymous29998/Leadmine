@@ -8,6 +8,12 @@ describe('verify-bulk Hazmat-style', () => {
     assert.deepEqual(list, ['a@b.com', 'c@d.org']);
   });
 
+  it('parseEmailList pulls emails from CSV / free text', () => {
+    const list = parseEmailList('Name,Email\nAda,ada@corp.io\nBob bob@corp.io phone');
+    assert.ok(list.includes('ada@corp.io'));
+    assert.ok(list.includes('bob@corp.io'));
+  });
+
   it('rejects role / generic mailboxes as invalid', async () => {
     const row = await verifyOneEmail('info@example.com', { smtp: false });
     assert.equal(row.bucket, 'invalid');
