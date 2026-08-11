@@ -111,10 +111,25 @@ export function ExtractorPage() {
         if (data.logs?.length) {
           setLiveLogs(
             data.logs
-              .filter((l) => /^(Failed|Skip|Fetching|Found:|Valid:|Rejected:)/i.test(l.message))
-              .slice(-8)
+              .filter((l) =>
+                /^(Failed|Skip|Fetching|Found:|Valid:|Rejected:|Serper|SerpAPI|Dual search|Google seed|Geo bias)/i.test(
+                  l.message,
+                ),
+              )
+              .slice(-10)
               .map((l) => `[${l.level}] ${l.message}`),
           );
+        }
+
+        // Clarify early phase: Google search runs before any page crawl
+        if (
+          (data.status === 'running' || data.status === 'starting') &&
+          (data.stats?.pages_crawled ?? 0) === 0 &&
+          !(data.results?.length || data.new_results?.length)
+        ) {
+          updateStatus('Searching Google for URLs (crawl starts after this)…', 'info');
+        } else if (data.status === 'running' || data.status === 'starting') {
+          updateStatus('Extraction in progress', 'info');
         }
 
         const final = ['completed', 'stopped', 'error', 'idle'];
@@ -575,6 +590,9 @@ export function ExtractorPage() {
               {crawling.map((url) => (
                 <div key={url}>Crawling: {url}</div>
               ))}
+              {running && !crawling.length && stats.pages_crawled === 0 && !liveLogs.length ? (
+                <div>Phase 1/2: querying Google (Serper/SerpAPI) for seed URLs…</div>
+              ) : null}
               {liveLogs.length > 0 && (
                 <div className="sniffy-live-logs">
                   {liveLogs.map((line) => (

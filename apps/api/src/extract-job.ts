@@ -115,34 +115,38 @@ export async function runExtraction(
       );
     }
 
-    push(
-      'INFO',
-      serperKey && serpKey
-        ? 'Dual web search (Serper + SerpAPI)…'
-        : serperKey
-          ? 'Serper web search…'
-          : 'SerpAPI web search…',
+    push('INFO', 'Economy search (few Google calls) → crawl ASAP…');
+    const allQueries = buildSearchQueries(body.subject, body.location, domains);
+    // Free-tier friendly: only the highest-yield query variants
+    const queries = allQueries.slice(0, body.maxResults >= 5_000 ? 4 : 2);
+    const searchKeys = { serperKey, serpApiKey: serpKey };
+    const economy = process.env.SEARCH_ECONOMY !== '0';
+
+    // One tight seed wave, then crawl (deep crawl finds more emails without extra search $)
+    const seedLimit = Math.min(
+      economy ? 100 : 200,
+      Math.max(25, Math.ceil(Math.min(body.maxResults, 1_000) * (economy ? 0.25 : 0.5))),
     );
-    const queries = buildSearchQueries(body.subject, body.location, domains);
     const urls = await searchWeb(
       queries,
-      { serperKey, serpApiKey: serpKey },
+      searchKeys,
       body.maxResults,
       body.location,
       logs,
       opts.cancelled,
       opts.onLog,
+      {
+        seedLimit,
+        maxPages: economy || body.maxResults < 1_000 ? 1 : 2,
+        queriesLimit: queries.length,
+        singleProvider: economy,
+      },
     );
-    if (!urls.length) {
-      push(
-        'WARNING',
-        'Search returned no scrapeable pages. Try a clearer location (city/country) or broader subject.',
-      );
-    }
-    // Gather many candidates from pages; Max Results only caps validated leads
+    push('INFO', `Crawl starting with ${urls.length} seed URL(s)…`);
+
     const candidateCap = Math.min(
       250_000,
-      Math.max(body.maxResults * 25, body.maxResults + 20_000, 10_000),
+      Math.max(body.maxResults * 15, body.maxResults + 5_000, 3_000),
     );
     raw = await extractFromUrls(
       urls,

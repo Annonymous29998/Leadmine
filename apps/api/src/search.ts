@@ -460,7 +460,7 @@ export type SearchKeys = {
   serpApiKey?: string;
 };
 
-/** Unified web search — uses Serper + SerpAPI together when both keys are set. */
+/** Unified web search — Serper first (fast), SerpAPI only if still need seeds. */
 export async function searchWeb(
   queries: string[],
   keys: SearchKeys,
@@ -469,37 +469,47 @@ export async function searchWeb(
   logs: LogEntry[],
   cancelled: () => boolean,
   onLog?: (e: LogEntry) => void,
+  opts?: {
+    seedLimit?: number;
+    maxPages?: number;
+    queriesLimit?: number;
+    /** When true, never call the second search provider (saves free-tier credits). */
+    singleProvider?: boolean;
+  },
 ): Promise<string[]> {
-  const seedLimit = Math.min(
-    MAX_SEED_URLS,
-    Math.max(
-      100,
-      maxResults >= 50_000
-        ? 40_000
-        : maxResults >= 10_000
-          ? 25_000
-          : maxResults >= 5_000
-            ? 12_000
-            : maxResults >= 1_000
-              ? 5_000
-              : maxResults >= 500
-                ? 2_000
-                : Math.min(Math.ceil(maxResults * 8), 1_000),
-    ),
-  );
-  const perPage = maxResults >= 500 ? 100 : 20;
+  // Keep seed collection tight so crawl can start quickly.
+  // (Old caps for 500 leads: 2000 URLs × 10 pages × 8 queries × 2 providers → minutes of wait.)
+  const seedLimit =
+    opts?.seedLimit ??
+    Math.min(
+      MAX_SEED_URLS,
+      Math.max(
+        40,
+        maxResults >= 50_000
+          ? 12_000
+          : maxResults >= 10_000
+            ? 4_000
+            : maxResults >= 5_000
+              ? 1_500
+              : maxResults >= 1_000
+                ? 400
+                : maxResults >= 500
+                  ? 200
+                  : Math.min(Math.ceil(maxResults * 2), 120),
+      ),
+    );
+  const perPage = maxResults >= 200 ? 100 : 20;
   const maxPages =
-    maxResults >= 50_000
-      ? 40
+    opts?.maxPages ??
+    (maxResults >= 50_000
+      ? 8
       : maxResults >= 10_000
-        ? 30
+        ? 4
         : maxResults >= 5_000
-          ? 20
+          ? 3
           : maxResults >= 1_000
-            ? 15
-            : maxResults >= 500
-              ? 10
-              : 6;
+            ? 2
+            : 1);
   const geo = resolveGeo(location);
   if (geo.gl || geo.location) {
     log(
@@ -514,11 +524,18 @@ export async function searchWeb(
 
   const serperKey = keys.serperKey?.trim() || '';
   const serpApiKey = keys.serpApiKey?.trim() || '';
-  const providers: { name: 'Serper' | 'SerpAPI'; key: string }[] = [];
-  if (serperKey) providers.push({ name: 'Serper', key: serperKey });
-  if (serpApiKey) providers.push({ name: 'SerpAPI', key: serpApiKey });
+  const primary: { name: 'Serper' | 'SerpAPI'; key: string } | null = serperKey
+    ? { name: 'Serper', key: serperKey }
+    : serpApiKey
+      ? { name: 'SerpAPI', key: serpApiKey }
+      : null;
+  const economy =
+    opts?.singleProvider === true ||
+    (opts?.singleProvider !== false && process.env.SEARCH_ECONOMY !== '0');
+  const secondary: { name: 'Serper' | 'SerpAPI'; key: string } | null =
+    !economy && serperKey && serpApiKey ? { name: 'SerpAPI', key: serpApiKey } : null;
 
-  if (!providers.length) {
+  if (!primary) {
     throw new Error(
       'No search API key. Set SERPER_API_KEY and/or SERPAPI_KEY in .env and restart.',
     );
@@ -527,15 +544,23 @@ export async function searchWeb(
   log(
     logs,
     'INFO',
-    providers.length > 1
-      ? `Dual search: Serper + SerpAPI (more Google URLs → more leads)`
-      : `Search provider: ${providers[0]!.name}`,
+    secondary
+      ? `Search: ${primary.name} first, ${secondary.name} only if needed`
+      : `Search provider: ${primary.name} (economy — 1 provider to save API credits)`,
     onLog,
   );
 
   const urls: string[] = [];
   const seen = new Set<string>();
-  log(logs, 'INFO', `Google seed target: ${seedLimit} URLs (${maxPages} pages × up to ${perPage}/page)`, onLog);
+  const queryList = opts?.queriesLimit
+    ? queries.slice(0, opts.queriesLimit)
+    : queries;
+  log(
+    logs,
+    'INFO',
+    `Google seed target: ${seedLimit} URLs (${maxPages} page(s) × up to ${perPage}/page, ${queryList.length} queries)`,
+    onLog,
+  );
 
   const addLinks = (links: string[]) => {
     for (const link of links) {
@@ -547,29 +572,46 @@ export async function searchWeb(
     }
   };
 
-  for (const query of queries) {
-    if (cancelled() || urls.length >= seedLimit) break;
+  const runProvider = async (
+    provider: { name: 'Serper' | 'SerpAPI'; key: string },
+    query: string,
+  ) => {
+    for (let page = 0; page < maxPages && urls.length < seedLimit; page++) {
+      if (cancelled()) return;
+      const { links, error } =
+        provider.name === 'Serper'
+          ? await serperPage(query, provider.key, page, geo, perPage)
+          : await serpApiPage(query, provider.key, page * perPage, geo, perPage);
 
-    for (const provider of providers) {
-      if (cancelled() || urls.length >= seedLimit) break;
-      log(logs, 'INFO', `${provider.name} search: ${query}`, onLog);
-
-      for (let page = 0; page < maxPages && urls.length < seedLimit; page++) {
-        if (cancelled()) break;
-        const { links, error } =
-          provider.name === 'Serper'
-            ? await serperPage(query, provider.key, page, geo, perPage)
-            : await serpApiPage(query, provider.key, page * perPage, geo, perPage);
-
-        if (error) {
-          log(logs, 'WARNING', `${provider.name}: ${error}`, onLog);
-          break;
-        }
-        if (!links.length) break;
-        addLinks(links);
-        if (links.length < Math.min(8, perPage / 2)) break;
-        await sleep(150);
+      if (error) {
+        log(logs, 'WARNING', `${provider.name}: ${error}`, onLog);
+        return;
       }
+      if (!links.length) return;
+      addLinks(links);
+      log(
+        logs,
+        'INFO',
+        `${provider.name} search: ${query.slice(0, 80)}${query.length > 80 ? '…' : ''} → ${urls.length} URL(s)`,
+        onLog,
+      );
+      if (links.length < Math.min(8, perPage / 2)) return;
+      if (page + 1 < maxPages) await sleep(40);
+    }
+  };
+
+  // Pass 1: primary provider across queries (starts crawl soon)
+  for (const query of queryList) {
+    if (cancelled() || urls.length >= seedLimit) break;
+    await runProvider(primary, query);
+  }
+
+  // Pass 2: secondary provider only if we still need more seeds
+  if (secondary && urls.length < seedLimit && !cancelled()) {
+    log(logs, 'INFO', `${secondary.name} fill-in (need more seed URLs)…`, onLog);
+    for (const query of queryList) {
+      if (cancelled() || urls.length >= seedLimit) break;
+      await runProvider(secondary, query);
     }
   }
 
@@ -582,7 +624,7 @@ export async function searchWeb(
   log(
     logs,
     'INFO',
-    `${providers.map((p) => p.name).join(' + ')} returned ${urls.length} scrapeable URL(s)`,
+    `Search returned ${urls.length} scrapeable URL(s) — starting crawl`,
     onLog,
   );
   return urls;
