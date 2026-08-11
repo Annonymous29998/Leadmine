@@ -29,6 +29,13 @@ import {
   verifyToken,
   readBearer,
 } from './auth.js';
+import {
+  getVerifyDownload,
+  getVerifyJob,
+  getVerifyProgress,
+  startVerifyJob,
+  stopVerifyJob,
+} from './verify-jobs.js';
 
 export async function registerApp(
   app: FastifyInstance,
@@ -74,6 +81,64 @@ export async function registerApp(
     const payload = verifyToken(token);
     if (!payload) return reply.status(401).send({ error: 'Session expired' });
     return { ok: true, email: payload.email };
+  });
+
+  /* ——— Hazmat-style email verifier (free DNS/MX/SMTP) ——— */
+  app.post('/api/verify_emails', { preHandler: requireAuth }, async (req, reply) => {
+    const body = z
+      .object({
+        text: z.string().min(1),
+        smtp: z.boolean().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) {
+      return reply.status(400).send({ error: 'Paste a list of emails (one per line).' });
+    }
+    try {
+      return await startVerifyJob({
+        text: body.data.text,
+        smtp: body.data.smtp,
+      });
+    } catch (err) {
+      return reply.status(409).send({
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+
+  app.get('/api/verify_progress', { preHandler: requireAuth }, async () => {
+    const job = getVerifyJob();
+    if (!job) {
+      return {
+        status: 'idle',
+        progress: 0,
+        total: 0,
+        checked: 0,
+        counts: { reachable: 0, invalid: 0, unknown: 0 },
+      };
+    }
+    return getVerifyProgress(job);
+  });
+
+  app.post('/api/verify_stop', { preHandler: requireAuth }, async () => stopVerifyJob());
+
+  app.get('/api/verify_download', { preHandler: requireAuth }, async (req, reply) => {
+    const job = getVerifyJob();
+    if (!job?.result) {
+      return reply.status(404).send({ error: 'No verification results yet' });
+    }
+    const q = req.query as { format?: string };
+    const format = (q.format || 'reachable').toLowerCase();
+    const allowed = ['reachable', 'invalid', 'unknown', 'all'] as const;
+    const kind = allowed.includes(format as (typeof allowed)[number])
+      ? (format as (typeof allowed)[number])
+      : 'reachable';
+    const file = getVerifyDownload(job, kind);
+    if (!file) return reply.status(404).send({ error: 'No file' });
+    reply.header('Content-Type', file.contentType);
+    reply.header('Content-Disposition', `attachment; filename="${file.filename}"`);
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(file.body);
   });
 
   const extractBody = z.object({

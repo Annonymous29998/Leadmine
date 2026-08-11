@@ -368,6 +368,7 @@ export function ExtractorPage() {
     <div className="sniffy-root">
       <div className="sniffy-container">
         <div className="sniffy-topnav">
+          <Link to="/verify">Verify</Link>
           <Link to="/export">Export</Link>
           <Link to="/settings">Settings</Link>
           <Link to="/help">Help</Link>

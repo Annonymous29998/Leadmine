@@ -256,6 +256,26 @@ export const api = {
   stopExtraction: () =>
     request<{ status: string }>('/api/stop_extraction', { method: 'POST', body: '{}' }),
 
+  verifyEmails: (body: { text: string; smtp?: boolean }) =>
+    request<{ jobId: string; status: string }>('/api/verify_emails', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  verifyProgress: () =>
+    request<{
+      status: string;
+      progress: number;
+      total: number;
+      checked: number;
+      counts?: { reachable: number; invalid: number; unknown: number };
+      error?: string;
+      smtp?: boolean;
+    }>('/api/verify_progress'),
+
+  verifyStop: () =>
+    request<{ status: string }>('/api/verify_stop', { method: 'POST', body: '{}' }),
+
   export: (body: Record<string, unknown>) =>
     request<{ paths: string[]; exportDir: string }>('/api/export', {
       method: 'POST',

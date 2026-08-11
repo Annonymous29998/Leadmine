@@ -5,6 +5,7 @@ const COMMANDS = [
   { id: 'search', label: 'Search', hint: '1', to: '/' },
   { id: 'progress', label: 'Progress', hint: '2', to: '/progress' },
   { id: 'results', label: 'Results', hint: '3', to: '/results' },
+  { id: 'verify', label: 'Verify emails', hint: 'V', to: '/verify' },
   { id: 'export', label: 'Export', hint: '4', to: '/export' },
   { id: 'settings', label: 'Settings', hint: '5', to: '/settings' },
   { id: 'clear', label: 'Clear results', hint: '', to: null },

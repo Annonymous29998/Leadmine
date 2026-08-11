@@ -12,6 +12,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  ShieldCheck,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
@@ -41,7 +42,10 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   },
   {
     label: 'OUTPUT',
-    items: [{ to: '/export', label: 'Export', icon: Download, key: '4' }],
+    items: [
+      { to: '/verify', label: 'Verify', icon: ShieldCheck, key: 'V' },
+      { to: '/export', label: 'Export', icon: Download, key: '4' },
+    ],
   },
   {
     label: 'SYSTEM',

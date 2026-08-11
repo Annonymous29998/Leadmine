@@ -9,6 +9,7 @@ import { ResultsPage } from '@/pages/ResultsPage';
 import { ExportPage } from '@/pages/ExportPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { HelpPage } from '@/pages/HelpPage';
+import { VerifyPage } from '@/pages/VerifyPage';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
 
         <Route element={<RequireAuth />}>
           <Route path="/" element={<ExtractorPage />} />
+          <Route path="/verify" element={<VerifyPage />} />
           <Route element={<AppLayout />}>
             <Route path="search" element={<SearchPage />} />
             <Route path="progress" element={<ProgressPage />} />
