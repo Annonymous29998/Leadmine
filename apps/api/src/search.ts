@@ -524,16 +524,15 @@ export async function searchWeb(
 
   const serperKey = keys.serperKey?.trim() || '';
   const serpApiKey = keys.serpApiKey?.trim() || '';
+  // Prefer SerpAPI when both exist on free Serper accounts (Serper blocks advanced/simple patterns oddly).
+  // Still try Serper first if it's the only key; fall back to SerpAPI on free-tier errors.
   const primary: { name: 'Serper' | 'SerpAPI'; key: string } | null = serperKey
     ? { name: 'Serper', key: serperKey }
     : serpApiKey
       ? { name: 'SerpAPI', key: serpApiKey }
       : null;
-  const economy =
-    opts?.singleProvider === true ||
-    (opts?.singleProvider !== false && process.env.SEARCH_ECONOMY !== '0');
-  const secondary: { name: 'Serper' | 'SerpAPI'; key: string } | null =
-    !economy && serperKey && serpApiKey ? { name: 'SerpAPI', key: serpApiKey } : null;
+  const fallback: { name: 'Serper' | 'SerpAPI'; key: string } | null =
+    serperKey && serpApiKey ? { name: 'SerpAPI', key: serpApiKey } : null;
 
   if (!primary) {
     throw new Error(
@@ -544,9 +543,9 @@ export async function searchWeb(
   log(
     logs,
     'INFO',
-    secondary
-      ? `Search: ${primary.name} first, ${secondary.name} only if needed`
-      : `Search provider: ${primary.name} (economy — 1 provider to save API credits)`,
+    fallback
+      ? `Search: ${primary.name} first, auto-fallback to ${fallback.name} if blocked/empty`
+      : `Search provider: ${primary.name}`,
     onLog,
   );
 
@@ -572,12 +571,16 @@ export async function searchWeb(
     }
   };
 
+  let freeTierBlocked = false;
+  let gotAnyPage = false;
+
   const runProvider = async (
     provider: { name: 'Serper' | 'SerpAPI'; key: string },
     query: string,
-  ) => {
+  ): Promise<'ok' | 'blocked' | 'empty' | 'error'> => {
+    let status: 'ok' | 'blocked' | 'empty' | 'error' = 'empty';
     for (let page = 0; page < maxPages && urls.length < seedLimit; page++) {
-      if (cancelled()) return;
+      if (cancelled()) return status;
       const { links, error } =
         provider.name === 'Serper'
           ? await serperPage(query, provider.key, page, geo, perPage)
@@ -585,9 +588,15 @@ export async function searchWeb(
 
       if (error) {
         log(logs, 'WARNING', `${provider.name}: ${error}`, onLog);
-        return;
+        if (/not allowed for free|query pattern|free account/i.test(error)) {
+          freeTierBlocked = true;
+          return 'blocked';
+        }
+        return 'error';
       }
-      if (!links.length) return;
+      if (!links.length) return status === 'ok' ? 'ok' : 'empty';
+      gotAnyPage = true;
+      status = 'ok';
       addLinks(links);
       log(
         logs,
@@ -595,29 +604,46 @@ export async function searchWeb(
         `${provider.name} search: ${query.slice(0, 80)}${query.length > 80 ? '…' : ''} → ${urls.length} URL(s)`,
         onLog,
       );
-      if (links.length < Math.min(8, perPage / 2)) return;
+      if (links.length < Math.min(8, perPage / 2)) return 'ok';
       if (page + 1 < maxPages) await sleep(40);
     }
+    return status;
   };
 
-  // Pass 1: primary provider across queries (starts crawl soon)
+  // Pass 1: primary provider
   for (const query of queryList) {
     if (cancelled() || urls.length >= seedLimit) break;
-    await runProvider(primary, query);
+    const st = await runProvider(primary, query);
+    if (st === 'blocked') break;
   }
 
-  // Pass 2: secondary provider only if we still need more seeds
-  if (secondary && urls.length < seedLimit && !cancelled()) {
-    log(logs, 'INFO', `${secondary.name} fill-in (need more seed URLs)…`, onLog);
+  // Pass 2: always fall back to SerpAPI if Serper free-tier blocked or returned nothing
+  if (fallback && urls.length === 0 && !cancelled()) {
+    log(
+      logs,
+      'INFO',
+      freeTierBlocked
+        ? `${primary.name} blocked this query type on free plan — switching to ${fallback.name}`
+        : `${primary.name} returned no URLs — trying ${fallback.name}`,
+      onLog,
+    );
     for (const query of queryList) {
       if (cancelled() || urls.length >= seedLimit) break;
-      await runProvider(secondary, query);
+      await runProvider(fallback, query);
+    }
+  } else if (fallback && urls.length < seedLimit && !cancelled() && opts?.singleProvider !== true) {
+    log(logs, 'INFO', `${fallback.name} fill-in (need more seed URLs)…`, onLog);
+    for (const query of queryList) {
+      if (cancelled() || urls.length >= seedLimit) break;
+      await runProvider(fallback, query);
     }
   }
 
   if (!urls.length) {
     throw new Error(
-      'Search returned no scrapeable URLs. Check Serper/SerpAPI keys and quota, or try broader terms.',
+      freeTierBlocked && !fallback
+        ? 'Serper free plan blocked these search queries. Add SERPAPI_KEY as fallback, or upgrade Serper.'
+        : 'Search returned no scrapeable URLs. Check Serper/SerpAPI keys and quota, or try broader terms (e.g. school contact email).',
     );
   }
 

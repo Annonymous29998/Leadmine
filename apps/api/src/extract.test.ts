@@ -71,10 +71,16 @@ describe('buildSearchQueries', () => {
   });
 
   it('includes Sniffy query variants', () => {
-    const qs = buildSearchQueries('realtor', 'Texas', ['gmail.com']);
+    const qs = buildSearchQueries('realtor', 'Texas', ['gmail.com'], 'full');
     assert.ok(qs.some((q) => q.includes('inurl:contact')));
     assert.ok(qs.some((q) => q.includes('"team" OR "staff"')));
     assert.ok(qs.some((q) => q.includes('filetype:pdf')));
+  });
+
+  it('builds simple free-tier safe queries', () => {
+    const qs = buildSearchQueries('school', 'San Jose, CA', [], 'simple');
+    assert.ok(qs.some((q) => q.includes('contact email')));
+    assert.ok(!qs.some((q) => /inurl:|filetype:|\bOR\b/.test(q)));
   });
 });
 

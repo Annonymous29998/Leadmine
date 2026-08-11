@@ -115,14 +115,18 @@ export async function runExtraction(
       );
     }
 
-    push('INFO', 'Economy search (few Google calls) → crawl ASAP…');
-    const allQueries = buildSearchQueries(body.subject, body.location, domains);
-    // Free-tier friendly: only the highest-yield query variants
+    push('INFO', 'Economy search (simple queries, free-tier safe) → crawl ASAP…');
+    const economy = process.env.SEARCH_ECONOMY !== '0';
+    const allQueries = buildSearchQueries(
+      body.subject,
+      body.location,
+      domains,
+      economy ? 'simple' : 'full',
+    );
+    // Free-tier friendly: only 2 simple queries (avoids Serper "pattern not allowed")
     const queries = allQueries.slice(0, body.maxResults >= 5_000 ? 4 : 2);
     const searchKeys = { serperKey, serpApiKey: serpKey };
-    const economy = process.env.SEARCH_ECONOMY !== '0';
 
-    // One tight seed wave, then crawl (deep crawl finds more emails without extra search $)
     const seedLimit = Math.min(
       economy ? 100 : 200,
       Math.max(25, Math.ceil(Math.min(body.maxResults, 1_000) * (economy ? 0.25 : 0.5))),
@@ -139,7 +143,8 @@ export async function runExtraction(
         seedLimit,
         maxPages: economy || body.maxResults < 1_000 ? 1 : 2,
         queriesLimit: queries.length,
-        singleProvider: economy,
+        // Still allow SerpAPI auto-fallback if Serper free plan blocks queries
+        singleProvider: false,
       },
     );
     push('INFO', `Crawl starting with ${urls.length} seed URL(s)…`);

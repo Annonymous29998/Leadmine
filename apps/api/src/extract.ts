@@ -86,14 +86,28 @@ export function buildSearchQueries(
   subject: string,
   location: string,
   domains: string[],
+  mode: 'full' | 'simple' = 'full',
 ): string[] {
   const subj = subject.trim();
+  const locRaw = location.trim();
   const loc = quoteIfNeeded(location);
   const domainClause = domains.length
     ? `(${domains.map((d) => `"@${d}"`).join(' OR ')})`
     : '';
   const base = [subj, loc].filter(Boolean).join(' ');
   const withDom = [base, domainClause].filter(Boolean).join(' ');
+
+  // Serper free accounts reject advanced operators (OR / inurl / filetype).
+  if (mode === 'simple') {
+    const plain = [subj, locRaw].filter(Boolean).join(' ');
+    const queries = [
+      `${plain} contact email`.trim(),
+      `${plain} contact us`.trim(),
+      `${plain} team email`.trim(),
+      domains[0] ? `${plain} @${domains[0]}`.trim() : `${plain} email address`.trim(),
+    ];
+    return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+  }
 
   const queries = [
     [withDom, '("email" OR "contact" OR "mailto" OR "e-mail" OR "contact us")']
