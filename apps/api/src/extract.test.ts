@@ -89,10 +89,10 @@ describe('buildSearchQueries', () => {
 
   it('simple queries target exact domains when filter is set', () => {
     const qs = buildSearchQueries('CEO', 'Lagos', ['outlook.com', 'hotmail.com'], 'simple');
-    assert.ok(qs.some((q) => q.includes('@outlook.com')));
-    assert.ok(qs.some((q) => q.includes('@hotmail.com')));
+    assert.ok(qs.some((q) => q.includes('outlook.com')));
+    assert.ok(qs.some((q) => q.includes('hotmail.com')));
     assert.ok(!qs.some((q) => q.includes('gmail.com')));
-    assert.ok(!qs.some((q) => q === 'CEO Lagos contact email' || /contact email$/.test(q) && !q.includes('@')));
+    assert.ok(!qs.some((q) => /"@/.test(q)), 'should not use quoted @domain (Serper free blocks)');
   });
 });
 

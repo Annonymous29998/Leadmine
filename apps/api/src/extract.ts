@@ -137,27 +137,34 @@ export function buildSearchQueries(
   const withDom = [base, domainClause].filter(Boolean).join(' ');
   const plain = [subj, locRaw].filter(Boolean).join(' ');
 
-  // Serper free accounts reject advanced operators (OR / inurl / filetype).
+  // Serper free accounts reject advanced operators (OR / inurl / filetype / heavy quoting).
   if (mode === 'simple') {
+    // Shorter place string → more Google hits (avoid over-long "City, ST, Country")
+    const place = locRaw.split(',')[0]?.trim() || locRaw;
+    const core = [subj, place].filter(Boolean).join(' ');
+
     if (domains.length) {
-      // Filter ON: ONLY queries for the exact domains pasted (no generic “contact email”).
-      const queries = [
-        ...domains.slice(0, 5).map((d) => `${plain} "@${d}" email`.trim()),
-        ...domains.slice(0, 5).map((d) => `${plain} @${d} contact`.trim()),
-        ...domains.slice(0, 3).map((d) => `${plain} email @${d}`.trim()),
-      ];
+      // Filter ON: domain-targeted queries without quotes/@ that Serper free often blocks.
+      // Still scoped to the pasted domains; email keep-filter remains exact.
+      const queries: string[] = [];
+      for (const d of domains.slice(0, 5)) {
+        queries.push(`${core} ${d} email`);
+        queries.push(`${core} ${d} contact`);
+        queries.push(`${d} email ${core}`);
+        queries.push(`${subj} ${d} email`.trim());
+      }
       return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
     }
     // Filter OFF: any domain — company + free webmail (gmail / outlook / hotmail / yahoo).
     const queries = [
-      `${plain} contact email`.trim(),
-      `${plain} team email`.trim(),
-      `${plain} gmail.com email`.trim(),
-      `${plain} outlook.com email`.trim(),
-      `${plain} hotmail.com email`.trim(),
-      `${plain} yahoo.com email`.trim(),
-      `${plain} email address`.trim(),
-      `${plain} contact us`.trim(),
+      `${core} contact email`.trim(),
+      `${core} team email`.trim(),
+      `${core} gmail.com email`.trim(),
+      `${core} outlook.com email`.trim(),
+      `${core} hotmail.com email`.trim(),
+      `${core} yahoo.com email`.trim(),
+      `${core} email address`.trim(),
+      `${core} contact us`.trim(),
     ];
     return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
   }

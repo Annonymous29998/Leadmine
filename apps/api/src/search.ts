@@ -673,10 +673,15 @@ export async function searchWeb(
   }
 
   if (!urls.length) {
+    const domainHint = queryList.some((q) =>
+      /outlook\.com|hotmail\.com|gmail\.com|yahoo\.com/i.test(q),
+    )
+      ? ' Free webmail (outlook/hotmail/gmail) + niche keywords often return 0 indexed pages — clear Domain Filter for company emails, or try broader terms like "founder contact email".'
+      : '';
     throw new Error(
       freeTierBlocked && !fallback
         ? 'Serper free plan blocked these search queries. Add SERPAPI_KEY as fallback, or upgrade Serper.'
-        : 'Search returned no scrapeable URLs. Check Serper/SerpAPI keys and quota, or try broader terms (e.g. school contact email).',
+        : `Search returned no scrapeable URLs. Check Serper/SerpAPI keys and quota, or try broader terms.${domainHint}`,
     );
   }
 

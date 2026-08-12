@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ExtractedEmail, LogEntry } from './extract.js';
+import { parseDomains } from './extract.js';
 import { runExtraction, type ExtractBody, type ExtractResult } from './extract-job.js';
 import { leadQualityScore, validateEmailAddress } from './validate.js';
 
@@ -316,27 +317,42 @@ export async function startJob(
           }
         };
 
-        const result: ExtractResult = await runExtraction(
-          {
-            subject: term,
-            location: body.location || '',
-            domains: body.domains,
-            maxResults: remaining,
-            mode: body.mode || 'web_search',
-            urlList: body.urlList,
-            fileContent: body.fileContent,
-            fileName: body.fileName,
-            maxDepth: depth,
-            useProxy: body.useProxy,
-            proxyList: body.proxyList,
-          },
-          {
-            cancelled: () => checkCancel() || job.results.length >= totalTarget,
-            onLog: pushLog,
-            serpKey: keys?.serpKey,
-            serperKey: keys?.serperKey,
-          },
-        );
+        let result: ExtractResult;
+        try {
+          result = await runExtraction(
+            {
+              subject: term,
+              location: body.location || '',
+              domains: body.domains,
+              maxResults: remaining,
+              mode: body.mode || 'web_search',
+              urlList: body.urlList,
+              fileContent: body.fileContent,
+              fileName: body.fileName,
+              maxDepth: depth,
+              useProxy: body.useProxy,
+              proxyList: body.proxyList,
+            },
+            {
+              cancelled: () => checkCancel() || job.results.length >= totalTarget,
+              onLog: pushLog,
+              serpKey: keys?.serpKey,
+              serperKey: keys?.serperKey,
+            },
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          // One bad term (e.g. niche + outlook filter) should not kill the whole multi-term job.
+          if (/no scrapeable URLs|blocked these search|pattern not allowed/i.test(msg)) {
+            job.logs.push({
+              level: 'WARNING',
+              message: `Skip term “${term}”: ${msg}`,
+              at: new Date().toISOString(),
+            });
+            continue;
+          }
+          throw err;
+        }
 
         // Let in-flight live MX checks finish (Sniffy streams as verified)
         for (let i = 0; i < 50 && validating.size > 0; i++) {
@@ -355,6 +371,15 @@ export async function startJob(
           }
           pushLead(em.email, leadQualityScore(em.email), em.sourceUrl);
         }
+      }
+
+      if (!job.results.length && !checkCancel()) {
+        const filtered = Boolean(parseDomains(body.domains || '').length);
+        throw new Error(
+          filtered
+            ? 'No scrapeable URLs / leads for these terms with the Domain Filter set. Clear the filter to find company + any emails, or use broader terms. Also check Serper/SerpAPI quota.'
+            : 'No scrapeable URLs for these terms. Check Serper/SerpAPI keys and quota, or try broader terms.',
+        );
       }
 
       // Sniffy: keep legitimate leads (score >= 60)
