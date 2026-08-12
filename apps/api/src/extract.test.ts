@@ -2,8 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildSearchQueries,
+  crawlHostAllowed,
   domainAllowed,
   extractEmailsFromText,
+  isCompanyOnlyFilter,
   normalizeHtmlForEmails,
   parseDomains,
   parseUrlList,
@@ -90,6 +92,22 @@ describe('buildSearchQueries', () => {
     assert.ok(qs.some((q) => q.includes('@outlook.com')));
     assert.ok(qs.some((q) => q.includes('@hotmail.com')));
     assert.ok(!qs.some((q) => q.includes('gmail.com')));
+    assert.ok(!qs.some((q) => q === 'CEO Lagos contact email' || /contact email$/.test(q) && !q.includes('@')));
+  });
+});
+
+describe('crawlHostAllowed', () => {
+  it('allows any host when filter empty or includes free webmail', () => {
+    assert.equal(crawlHostAllowed('random.org', []), true);
+    assert.equal(isCompanyOnlyFilter(['outlook.com']), false);
+    assert.equal(crawlHostAllowed('news.site', ['outlook.com']), true);
+  });
+
+  it('restricts crawl to company domain hosts when filter is company-only', () => {
+    assert.equal(isCompanyOnlyFilter(['acme.com']), true);
+    assert.equal(crawlHostAllowed('acme.com', ['acme.com']), true);
+    assert.equal(crawlHostAllowed('www.acme.com', ['acme.com']), true);
+    assert.equal(crawlHostAllowed('other.com', ['acme.com']), false);
   });
 });
 

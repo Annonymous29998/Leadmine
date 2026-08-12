@@ -85,6 +85,41 @@ export function domainAllowed(emailDomain: string, allowed: string[]): boolean {
   });
 }
 
+const FREE_WEBMAIL = new Set([
+  'gmail.com',
+  'googlemail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'msn.com',
+  'yahoo.com',
+  'ymail.com',
+  'icloud.com',
+  'me.com',
+  'mac.com',
+  'aol.com',
+  'proton.me',
+  'protonmail.com',
+]);
+
+export function isFreeWebmailDomain(domain: string): boolean {
+  return FREE_WEBMAIL.has(domain.toLowerCase());
+}
+
+/** Company-only filter (no free webmail) → crawl should stay on those hosts. */
+export function isCompanyOnlyFilter(domains: string[]): boolean {
+  return domains.length > 0 && domains.every((d) => !isFreeWebmailDomain(d));
+}
+
+/** Host allowed for crawling when a domain filter is set. */
+export function crawlHostAllowed(hostname: string, domains: string[]): boolean {
+  if (!domains.length) return true;
+  // Free webmail filters: emails live on third-party pages from search — any host OK.
+  if (!isCompanyOnlyFilter(domains)) return true;
+  const host = hostname.toLowerCase().replace(/^www\./, '');
+  return domainAllowed(host, domains);
+}
+
 /** Sniffy-style multi-query builder (contact / team / PDF / email). */
 export function buildSearchQueries(
   subject: string,
@@ -105,11 +140,11 @@ export function buildSearchQueries(
   // Serper free accounts reject advanced operators (OR / inurl / filetype).
   if (mode === 'simple') {
     if (domains.length) {
-      // Filter ON: hunt only the exact domains the user pasted.
+      // Filter ON: ONLY queries for the exact domains pasted (no generic “contact email”).
       const queries = [
-        ...domains.slice(0, 4).map((d) => `${plain} @${d} email`.trim()),
-        ...domains.slice(0, 2).map((d) => `${plain} @${d} contact`.trim()),
-        `${plain} contact email`.trim(),
+        ...domains.slice(0, 5).map((d) => `${plain} "@${d}" email`.trim()),
+        ...domains.slice(0, 5).map((d) => `${plain} @${d} contact`.trim()),
+        ...domains.slice(0, 3).map((d) => `${plain} email @${d}`.trim()),
       ];
       return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
     }

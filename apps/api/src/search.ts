@@ -1,7 +1,13 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
-import { extractEmailsFromText, type ExtractedEmail, type LogEntry } from './extract.js';
+import {
+  crawlHostAllowed,
+  extractEmailsFromText,
+  isCompanyOnlyFilter,
+  type ExtractedEmail,
+  type LogEntry,
+} from './extract.js';
 import { resolveGeo, type GeoHint } from './geo.js';
 import {
   extractTextFromOffice,
@@ -271,9 +277,20 @@ export async function extractFromUrls(
   const results: ExtractedEmail[] = [];
   const seen = new Set<string>();
   const scraped = new Set<string>();
+  const companyOnly = isCompanyOnlyFilter(domains);
+  // Domain filter ON + free webmail: stay on search seeds only (no deep directory wander).
+  // Domain filter ON + company hosts: stay on those hosts only.
+  // Domain filter OFF: normal crawl + link discovery.
+  const scoped = domains.length > 0;
+  const effectiveDepth = scoped && !companyOnly ? 0 : maxDepth;
+
   const queue = urls.filter((u) => {
     if (isBlockedUrl(u)) {
       log(logs, 'WARNING', `Skip blocked host: ${u}`, onLog);
+      return false;
+    }
+    if (companyOnly && !crawlHostAllowed(hostOf(u), domains)) {
+      log(logs, 'WARNING', `Skip off-domain host (filter): ${u}`, onLog);
       return false;
     }
     return true;
@@ -293,25 +310,40 @@ export async function extractFromUrls(
 
   let idx = 0;
   let active = 0;
-  const depthLimit = Math.min(3, Math.max(1, maxDepth));
+  const depthLimit = Math.min(3, Math.max(0, effectiveDepth));
   // Sniffy-scale page budget — crawl many sites, not just a few hundred
   const pageBudget = Math.min(
     MAX_CRAWL_QUEUE,
     Math.max(
       queue.length * 2,
-      maxResults >= 50_000
-        ? 80_000
-        : maxResults >= 10_000
-          ? 40_000
-          : maxResults >= 5_000
-            ? 20_000
-            : maxResults >= 1_000
-              ? 8_000
-              : maxResults >= 500
-                ? 3_000
-                : Math.max(1_000, queue.length * 5),
+      scoped
+        ? Math.min(
+            companyOnly ? 4_000 : Math.max(queue.length, 200),
+            maxResults >= 1_000 ? 2_000 : 800,
+          )
+        : maxResults >= 50_000
+          ? 80_000
+          : maxResults >= 10_000
+            ? 40_000
+            : maxResults >= 5_000
+              ? 20_000
+              : maxResults >= 1_000
+                ? 8_000
+                : maxResults >= 500
+                  ? 3_000
+                  : Math.max(1_000, queue.length * 5),
     ),
   );
+  if (scoped) {
+    log(
+      logs,
+      'INFO',
+      companyOnly
+        ? `Domain filter crawl: only hosts matching ${domains.join(', ')}`
+        : `Domain filter crawl: search seeds for @${domains.join('/@')} only (no deep wander)`,
+      onLog,
+    );
+  }
   log(logs, 'INFO', `Crawl plan: ${queue.length} seed URL(s), up to ${pageBudget} pages, depth ${depthLimit}`, onLog);
 
   const pushEmails = (list: ExtractedEmail[]) => {
@@ -353,6 +385,7 @@ export async function extractFromUrls(
               finalUrl,
               results.length < maxResults,
             )) {
+              if (companyOnly && !crawlHostAllowed(hostOf(extra), domains)) continue;
               if (
                 !scraped.has(extra) &&
                 !queue.includes(extra) &&

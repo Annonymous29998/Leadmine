@@ -462,9 +462,9 @@ export function ExtractorPage() {
                     placeholder="Leave empty for any · or company.com"
                   />
                   <p className="sniffy-hint" style={{ marginTop: '0.35rem' }}>
-                    <strong>Empty</strong> = keep any domain (Gmail, Outlook, Hotmail, Yahoo,
-                    company). <strong>Filled</strong> = only those exact domains (e.g.{' '}
-                    <code>outlook.com</code> or <code>acme.com</code>).
+                    <strong>Empty</strong> = search &amp; crawl all domains (Gmail, Outlook,
+                    company, …). <strong>Filled</strong> = search &amp; crawl only for those
+                    exact domains (e.g. <code>outlook.com</code> or <code>acme.com</code>).
                   </p>
                 </div>
                 <div>

@@ -133,8 +133,8 @@ export async function runExtraction(
     push(
       'INFO',
       domains.length
-        ? `Domain filter ON — only: ${domains.join(', ')}`
-        : 'Domain filter OFF — keeping any domain (gmail, outlook, hotmail, yahoo, company, …)',
+        ? `Domain filter ON — search + crawl scoped to: ${domains.join(', ')}`
+        : 'Domain filter OFF — search + crawl any domain (gmail, outlook, hotmail, yahoo, company, …)',
     );
     const searchKeys = { serperKey, serpApiKey: serpKey };
 
