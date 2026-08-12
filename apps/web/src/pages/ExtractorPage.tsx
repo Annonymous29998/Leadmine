@@ -462,9 +462,9 @@ export function ExtractorPage() {
                     placeholder="Leave empty for any · or company.com"
                   />
                   <p className="sniffy-hint" style={{ marginTop: '0.35rem' }}>
-                    Only keeps emails ending in these domains. Sites publish @company.com, rarely
-                    @outlook.com / @hotmail.com — leave blank unless you want a specific company
-                    domain.
+                    <strong>Empty</strong> = keep any domain (Gmail, Outlook, Hotmail, Yahoo,
+                    company). <strong>Filled</strong> = only those exact domains (e.g.{' '}
+                    <code>outlook.com</code> or <code>acme.com</code>).
                   </p>
                 </div>
                 <div>

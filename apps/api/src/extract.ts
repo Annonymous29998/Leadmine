@@ -71,13 +71,17 @@ export function parseDomains(input: string | string[]): string[] {
   return out;
 }
 
-/** Exact match or subdomain of an allowed domain (never match bare TLD). */
+/** Exact match or subdomain of an allowed domain (never match bare TLD).
+ * Empty `allowed` = keep any domain (gmail, outlook, company, …).
+ */
 export function domainAllowed(emailDomain: string, allowed: string[]): boolean {
   if (!allowed.length) return true;
   const domain = emailDomain.toLowerCase();
   return allowed.some((d) => {
-    if (isBareTld(d)) return false;
-    return domain === d || domain.endsWith(`.${d}`);
+    const want = d.toLowerCase();
+    if (isBareTld(want)) return false;
+    // Exact domain only (plus real subdomains like mail.company.com) — never partial/fuzzy.
+    return domain === want || domain.endsWith(`.${want}`);
   });
 }
 
@@ -96,15 +100,29 @@ export function buildSearchQueries(
     : '';
   const base = [subj, loc].filter(Boolean).join(' ');
   const withDom = [base, domainClause].filter(Boolean).join(' ');
+  const plain = [subj, locRaw].filter(Boolean).join(' ');
 
   // Serper free accounts reject advanced operators (OR / inurl / filetype).
   if (mode === 'simple') {
-    const plain = [subj, locRaw].filter(Boolean).join(' ');
+    if (domains.length) {
+      // Filter ON: hunt only the exact domains the user pasted.
+      const queries = [
+        ...domains.slice(0, 4).map((d) => `${plain} @${d} email`.trim()),
+        ...domains.slice(0, 2).map((d) => `${plain} @${d} contact`.trim()),
+        `${plain} contact email`.trim(),
+      ];
+      return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+    }
+    // Filter OFF: any domain — company + free webmail (gmail / outlook / hotmail / yahoo).
     const queries = [
       `${plain} contact email`.trim(),
-      `${plain} contact us`.trim(),
       `${plain} team email`.trim(),
-      domains[0] ? `${plain} @${domains[0]}`.trim() : `${plain} email address`.trim(),
+      `${plain} gmail.com email`.trim(),
+      `${plain} outlook.com email`.trim(),
+      `${plain} hotmail.com email`.trim(),
+      `${plain} yahoo.com email`.trim(),
+      `${plain} email address`.trim(),
+      `${plain} contact us`.trim(),
     ];
     return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
   }
@@ -128,9 +146,20 @@ export function buildSearchQueries(
     ]
       .filter(Boolean)
       .join(' '),
-    [withDom, '("@gmail.com" OR "@yahoo.com" OR "@outlook.com" OR email)'].filter(Boolean).join(' '),
-    [withDom, 'email', '-linkedin', '-facebook', '-instagram', '-twitter', '-youtube'].filter(Boolean).join(' '),
   ];
+
+  if (!domains.length) {
+    queries.push(
+      [base, '("@gmail.com" OR "@yahoo.com" OR "@outlook.com" OR "@hotmail.com")'].join(' '),
+      [base, 'email', '-linkedin', '-facebook', '-instagram', '-twitter', '-youtube'].join(' '),
+    );
+  } else {
+    queries.push(
+      [withDom, 'email', '-linkedin', '-facebook', '-instagram', '-twitter', '-youtube']
+        .filter(Boolean)
+        .join(' '),
+    );
+  }
 
   return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
 }

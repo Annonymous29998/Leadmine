@@ -123,8 +123,19 @@ export async function runExtraction(
       domains,
       economy ? 'simple' : 'full',
     );
-    // Free-tier friendly: only 2 simple queries (avoids Serper "pattern not allowed")
-    const queries = allQueries.slice(0, body.maxResults >= 5_000 ? 4 : 2);
+    // More queries when hunting any domain (gmail/outlook/company); fewer when filter is set.
+    const queryCap = domains.length
+      ? Math.min(4, Math.max(2, domains.length + 1))
+      : body.maxResults >= 5_000
+        ? 6
+        : 4;
+    const queries = allQueries.slice(0, queryCap);
+    push(
+      'INFO',
+      domains.length
+        ? `Domain filter ON — only: ${domains.join(', ')}`
+        : 'Domain filter OFF — keeping any domain (gmail, outlook, hotmail, yahoo, company, …)',
+    );
     const searchKeys = { serperKey, serpApiKey: serpKey };
 
     const seedLimit = Math.min(

@@ -80,7 +80,16 @@ describe('buildSearchQueries', () => {
   it('builds simple free-tier safe queries', () => {
     const qs = buildSearchQueries('school', 'San Jose, CA', [], 'simple');
     assert.ok(qs.some((q) => q.includes('contact email')));
+    assert.ok(qs.some((q) => q.includes('gmail.com')));
+    assert.ok(qs.some((q) => q.includes('outlook.com')));
     assert.ok(!qs.some((q) => /inurl:|filetype:|\bOR\b/.test(q)));
+  });
+
+  it('simple queries target exact domains when filter is set', () => {
+    const qs = buildSearchQueries('CEO', 'Lagos', ['outlook.com', 'hotmail.com'], 'simple');
+    assert.ok(qs.some((q) => q.includes('@outlook.com')));
+    assert.ok(qs.some((q) => q.includes('@hotmail.com')));
+    assert.ok(!qs.some((q) => q.includes('gmail.com')));
   });
 });
 
