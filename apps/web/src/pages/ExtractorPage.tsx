@@ -459,8 +459,13 @@ export function ExtractorPage() {
                     className="sniffy-input"
                     value={domainsDraft}
                     onChange={(e) => setDomainsDraft(e.target.value)}
-                    placeholder="e.g. domain1.com, domain2.com"
+                    placeholder="Leave empty for any · or company.com"
                   />
+                  <p className="sniffy-hint" style={{ marginTop: '0.35rem' }}>
+                    Only keeps emails ending in these domains. Sites publish @company.com, rarely
+                    @outlook.com / @hotmail.com — leave blank unless you want a specific company
+                    domain.
+                  </p>
                 </div>
                 <div>
                   <label className="sniffy-label" htmlFor="maxResults">
