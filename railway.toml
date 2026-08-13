@@ -1,12 +1,10 @@
-# Railway — LeadMine Extractor
+# Railway — LeadMine API (frontend on Vercel)
 #
-# Root cause of repeated "service unavailable" healthchecks:
-# Railway reaches containers over IPv6. Binding 0.0.0.0 is IPv4-only.
 # App must listen on "::" with ipv6Only:false (see apps/api/src/index.ts).
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "Dockerfile"
+dockerfilePath = "Dockerfile.api"
 
 [deploy]
 startCommand = "/app/scripts/railway-entrypoint.sh"

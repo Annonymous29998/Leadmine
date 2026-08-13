@@ -44,7 +44,18 @@ export async function registerApp(
   const DEFAULT_EXPORTS = opts.exportsDir;
   const ROOT = opts.root;
 
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    // Comma-separated Vercel origins, e.g. https://leadmin.vercel.app
+    // Empty = allow all (ok for same-origin Docker; set CORS_ORIGIN in split deploy).
+    origin: (() => {
+      const raw = process.env.CORS_ORIGIN?.trim();
+      if (!raw) return true;
+      const list = raw.split(',').map((s) => s.trim()).filter(Boolean);
+      return list.length ? list : true;
+    })(),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
 
   // —— Auth (does not affect /api/health) ——
   app.get('/api/auth/status', async () => ({

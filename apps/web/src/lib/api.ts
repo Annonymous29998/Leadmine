@@ -1,5 +1,17 @@
 const AUTH_KEY = 'leadmin_auth_token';
 
+/** Railway API origin in production (Vercel). Empty in local Vite (uses /api proxy). */
+export function apiBase(): string {
+  const raw = (import.meta.env.VITE_API_URL as string | undefined)?.trim() || '';
+  return raw.replace(/\/$/, '');
+}
+
+export function apiUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${apiBase()}${p}`;
+}
+
 export type ExtractedEmail = {
   email: string;
   domain: string;
@@ -66,7 +78,7 @@ function authHeaders(extra?: HeadersInit): HeadersInit {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     ...init,
     headers: authHeaders(init?.headers),
   });
@@ -90,7 +102,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 /** Authenticated fetch for binary downloads (CSV/TXT). */
 export async function authFetch(url: string, init?: RequestInit): Promise<Response> {
   const token = getAuthToken();
-  const res = await fetch(url, {
+  const res = await fetch(apiUrl(url), {
     ...init,
     headers: {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -155,7 +167,7 @@ export const api = {
     body: Record<string, unknown>,
     opts: { signal?: AbortSignal; onLog?: (log: LogEntry) => void },
   ): Promise<ExtractResult> => {
-    const res = await fetch('/api/extract/stream', {
+    const res = await fetch(apiUrl('/api/extract/stream'), {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(body),
