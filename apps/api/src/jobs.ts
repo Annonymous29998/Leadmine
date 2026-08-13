@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ExtractedEmail, LogEntry } from './extract.js';
-import { parseDomains } from './extract.js';
+import { parseDomainFilter } from './extract.js';
 import { runExtraction, type ExtractBody, type ExtractResult } from './extract-job.js';
 import { leadQualityScore, validateEmailAddress } from './validate.js';
 
@@ -374,10 +374,10 @@ export async function startJob(
       }
 
       if (!job.results.length && !checkCancel()) {
-        const filtered = Boolean(parseDomains(body.domains || '').length);
+        const filtered = parseDomainFilter(body.domains || '').mode !== 'any';
         throw new Error(
           filtered
-            ? 'No scrapeable URLs / leads for these terms with the Domain Filter set. Clear the filter to find company + any emails, or use broader terms. Also check Serper/SerpAPI quota.'
+            ? 'No scrapeable URLs / leads for these terms with the Domain Filter set. Try empty (all), company.com (corporate only), or gmail.com/yahoo.com. Also check Serper/SerpAPI quota.'
             : 'No scrapeable URLs for these terms. Check Serper/SerpAPI keys and quota, or try broader terms.',
         );
       }

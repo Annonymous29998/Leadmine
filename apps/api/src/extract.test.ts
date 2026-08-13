@@ -6,9 +6,12 @@ import {
   domainAllowed,
   extractEmailsFromText,
   isCompanyOnlyFilter,
+  isExactCompanyHostFilter,
   normalizeHtmlForEmails,
+  parseDomainFilter,
   parseDomains,
   parseUrlList,
+  emailMatchesFilter,
 } from './extract.js';
 import { resolveGeo } from './geo.js';
 
@@ -19,6 +22,29 @@ describe('parseDomains', () => {
       'yahoo.com',
       'outlook.com',
     ]);
+  });
+});
+
+describe('parseDomainFilter', () => {
+  it('empty = any', () => {
+    assert.equal(parseDomainFilter('').mode, 'any');
+  });
+
+  it('company.com means all corporate emails, not the domain company.com', () => {
+    const f = parseDomainFilter('company.com');
+    assert.equal(f.mode, 'corporate');
+    assert.deepEqual(f.domains, []);
+    assert.equal(emailMatchesFilter('acme.io', f), true);
+    assert.equal(emailMatchesFilter('gmail.com', f), false);
+    assert.equal(emailMatchesFilter('yahoo.com', f), false);
+  });
+
+  it('gmail/yahoo are exact', () => {
+    const f = parseDomainFilter('gmail.com, yahoo.com');
+    assert.equal(f.mode, 'exact');
+    assert.deepEqual(f.domains, ['gmail.com', 'yahoo.com']);
+    assert.equal(emailMatchesFilter('gmail.com', f), true);
+    assert.equal(emailMatchesFilter('acme.com', f), false);
   });
 });
 
@@ -94,6 +120,12 @@ describe('buildSearchQueries', () => {
     assert.ok(!qs.some((q) => q.includes('gmail.com')));
     assert.ok(!qs.some((q) => /"@/.test(q)), 'should not use quoted @domain (Serper free blocks)');
   });
+
+  it('simple queries for corporate mode avoid free-webmail hunts', () => {
+    const qs = buildSearchQueries('CEO', 'Lagos', parseDomainFilter('company.com'), 'simple');
+    assert.ok(qs.some((q) => q.includes('contact email') || q.includes('company email')));
+    assert.ok(!qs.some((q) => q.includes('gmail.com')));
+  });
 });
 
 describe('crawlHostAllowed', () => {
@@ -104,10 +136,16 @@ describe('crawlHostAllowed', () => {
   });
 
   it('restricts crawl to company domain hosts when filter is company-only', () => {
-    assert.equal(isCompanyOnlyFilter(['acme.com']), true);
+    assert.equal(isExactCompanyHostFilter({ mode: 'exact', domains: ['acme.com'] }), true);
     assert.equal(crawlHostAllowed('acme.com', ['acme.com']), true);
     assert.equal(crawlHostAllowed('www.acme.com', ['acme.com']), true);
     assert.equal(crawlHostAllowed('other.com', ['acme.com']), false);
+  });
+
+  it('corporate mode does not restrict crawl hosts', () => {
+    const f = parseDomainFilter('company.com');
+    assert.equal(f.mode, 'corporate');
+    assert.equal(crawlHostAllowed('random.org', f), true);
   });
 });
 

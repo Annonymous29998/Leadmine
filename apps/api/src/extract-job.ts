@@ -2,7 +2,7 @@ import {
   buildSearchQueries,
   dedupeEmails,
   extractEmailsFromText,
-  parseDomains,
+  parseDomainFilter,
   parseUrlList,
   type ExtractedEmail,
   type LogEntry,
@@ -47,13 +47,18 @@ export async function runExtraction(
     serperKey?: string;
   },
 ): Promise<ExtractResult> {
-  // Empty = no filter (Sniffy Domain Filter is optional)
-  const domains = parseDomains(body.domains);
+  const filter = parseDomainFilter(body.domains);
+  const domains = filter.domains;
 
   const params: SearchParams = {
     subject: body.subject,
     location: body.location,
-    domains,
+    domains:
+      filter.mode === 'corporate'
+        ? ['company']
+        : filter.mode === 'any'
+          ? []
+          : domains,
     maxResults: body.maxResults,
     mode: body.mode,
     urlList: body.urlList,
@@ -83,7 +88,7 @@ export async function runExtraction(
 
     if (body.fileContent) {
       const label = body.fileName ? `file://${body.fileName}` : 'file://upload';
-      const fromFile = extractEmailsFromText(body.fileContent, label, domains);
+      const fromFile = extractEmailsFromText(body.fileContent, label, filter);
       raw.push(...fromFile);
       for (const e of fromFile) push('SUCCESS', `Candidate: ${e.email}`);
     }
@@ -96,7 +101,7 @@ export async function runExtraction(
     if (urls.length) {
       const fromUrls = await extractFromUrls(
         urls,
-        domains,
+        filter,
         Math.max(body.maxResults, body.maxResults * 2),
         logs,
         opts.cancelled,
@@ -120,21 +125,25 @@ export async function runExtraction(
     const allQueries = buildSearchQueries(
       body.subject,
       body.location,
-      domains,
+      filter,
       economy ? 'simple' : 'full',
     );
-    // More queries when hunting any domain (gmail/outlook/company); fewer when filter is set.
-    const queryCap = domains.length
-      ? Math.min(4, Math.max(2, domains.length + 1))
-      : body.maxResults >= 5_000
-        ? 6
-        : 4;
+    const queryCap =
+      filter.mode === 'exact'
+        ? Math.min(4, Math.max(2, filter.domains.length + 1))
+        : filter.mode === 'corporate'
+          ? 4
+          : body.maxResults >= 5_000
+            ? 6
+            : 4;
     const queries = allQueries.slice(0, queryCap);
     push(
       'INFO',
-      domains.length
-        ? `Domain filter ON — search + crawl scoped to: ${domains.join(', ')}`
-        : 'Domain filter OFF — search + crawl any domain (gmail, outlook, hotmail, yahoo, company, …)',
+      filter.mode === 'corporate'
+        ? 'Domain filter: COMPANY emails only (all corporate domains — not gmail/outlook/yahoo)'
+        : filter.mode === 'exact'
+          ? `Domain filter ON — only: ${filter.domains.join(', ')}`
+          : 'Domain filter OFF — company + gmail/outlook/yahoo/…',
     );
     const searchKeys = { serperKey, serpApiKey: serpKey };
 
@@ -154,7 +163,6 @@ export async function runExtraction(
         seedLimit,
         maxPages: economy || body.maxResults < 1_000 ? 1 : 2,
         queriesLimit: queries.length,
-        // Still allow SerpAPI auto-fallback if Serper free plan blocks queries
         singleProvider: false,
       },
     );
@@ -166,7 +174,7 @@ export async function runExtraction(
     );
     raw = await extractFromUrls(
       urls,
-      domains,
+      filter,
       candidateCap,
       logs,
       opts.cancelled,

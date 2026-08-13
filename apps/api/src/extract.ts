@@ -71,6 +71,47 @@ export function parseDomains(input: string | string[]): string[] {
   return out;
 }
 
+/** Keywords that mean “all company / corporate emails”, not the literal domain company.com */
+const CORPORATE_TOKENS = new Set([
+  'company',
+  'company.com',
+  'companies',
+  'corporate',
+  'business',
+  'work',
+]);
+
+export type DomainFilterMode = 'any' | 'corporate' | 'exact';
+
+export type DomainFilter = {
+  /** any = empty filter; corporate = all non-webmail; exact = listed domains only */
+  mode: DomainFilterMode;
+  domains: string[];
+};
+
+/**
+ * Parse Domain Filter box:
+ * - empty → any (gmail + outlook + company …)
+ * - `company` / `company.com` / `corporate` → all company domains (not free webmail)
+ * - `gmail.com, yahoo.com` → only those exact domains
+ * - `acme.com` → only that company domain
+ */
+export function parseDomainFilter(input: string | string[]): DomainFilter {
+  const parts = (Array.isArray(input) ? input : String(input || '').split(/[,;\s]+/))
+    .map((p) => p.trim().toLowerCase().replace(/^@+/, ''))
+    .filter(Boolean);
+
+  if (!parts.length) return { mode: 'any', domains: [] };
+
+  const wantsCorporate = parts.some((p) => CORPORATE_TOKENS.has(p));
+  const rest = parts.filter((p) => !CORPORATE_TOKENS.has(p));
+  const domains = parseDomains(rest);
+
+  if (wantsCorporate && !domains.length) return { mode: 'corporate', domains: [] };
+  if (domains.length) return { mode: 'exact', domains };
+  return { mode: 'any', domains: [] };
+}
+
 /** Exact match or subdomain of an allowed domain (never match bare TLD).
  * Empty `allowed` = keep any domain (gmail, outlook, company, …).
  */
@@ -83,6 +124,12 @@ export function domainAllowed(emailDomain: string, allowed: string[]): boolean {
     // Exact domain only (plus real subdomains like mail.company.com) — never partial/fuzzy.
     return domain === want || domain.endsWith(`.${want}`);
   });
+}
+
+export function emailMatchesFilter(emailDomain: string, filter: DomainFilter): boolean {
+  if (filter.mode === 'any') return true;
+  if (filter.mode === 'corporate') return !isFreeWebmailDomain(emailDomain);
+  return domainAllowed(emailDomain, filter.domains);
 }
 
 const FREE_WEBMAIL = new Set([
@@ -106,36 +153,54 @@ export function isFreeWebmailDomain(domain: string): boolean {
   return FREE_WEBMAIL.has(domain.toLowerCase());
 }
 
-/** Company-only filter (no free webmail) → crawl should stay on those hosts. */
+/** Exact non-webmail domains (e.g. acme.com) → crawl only those hosts. */
+export function isExactCompanyHostFilter(filter: DomainFilter): boolean {
+  return (
+    filter.mode === 'exact' &&
+    filter.domains.length > 0 &&
+    filter.domains.every((d) => !isFreeWebmailDomain(d))
+  );
+}
+
+/** @deprecated use isExactCompanyHostFilter */
 export function isCompanyOnlyFilter(domains: string[]): boolean {
   return domains.length > 0 && domains.every((d) => !isFreeWebmailDomain(d));
 }
 
 /** Host allowed for crawling when a domain filter is set. */
-export function crawlHostAllowed(hostname: string, domains: string[]): boolean {
-  if (!domains.length) return true;
-  // Free webmail filters: emails live on third-party pages from search — any host OK.
-  if (!isCompanyOnlyFilter(domains)) return true;
+export function crawlHostAllowed(
+  hostname: string,
+  domainsOrFilter: string[] | DomainFilter,
+): boolean {
+  const filter: DomainFilter = Array.isArray(domainsOrFilter)
+    ? { mode: domainsOrFilter.length ? 'exact' : 'any', domains: domainsOrFilter }
+    : domainsOrFilter;
+  if (filter.mode === 'any' || filter.mode === 'corporate') return true;
+  if (!isExactCompanyHostFilter(filter)) return true;
   const host = hostname.toLowerCase().replace(/^www\./, '');
-  return domainAllowed(host, domains);
+  return domainAllowed(host, filter.domains);
 }
 
 /** Sniffy-style multi-query builder (contact / team / PDF / email). */
 export function buildSearchQueries(
   subject: string,
   location: string,
-  domains: string[],
+  domainsOrFilter: string[] | DomainFilter,
   mode: 'full' | 'simple' = 'full',
 ): string[] {
+  const filter: DomainFilter = Array.isArray(domainsOrFilter)
+    ? { mode: domainsOrFilter.length ? 'exact' : 'any', domains: domainsOrFilter }
+    : domainsOrFilter;
+  const domains = filter.domains;
   const subj = subject.trim();
   const locRaw = location.trim();
   const loc = quoteIfNeeded(location);
-  const domainClause = domains.length
-    ? `(${domains.map((d) => `"@${d}"`).join(' OR ')})`
-    : '';
+  const domainClause =
+    filter.mode === 'exact' && domains.length
+      ? `(${domains.map((d) => `"@${d}"`).join(' OR ')})`
+      : '';
   const base = [subj, loc].filter(Boolean).join(' ');
   const withDom = [base, domainClause].filter(Boolean).join(' ');
-  const plain = [subj, locRaw].filter(Boolean).join(' ');
 
   // Serper free accounts reject advanced operators (OR / inurl / filetype / heavy quoting).
   if (mode === 'simple') {
@@ -143,9 +208,7 @@ export function buildSearchQueries(
     const place = locRaw.split(',')[0]?.trim() || locRaw;
     const core = [subj, place].filter(Boolean).join(' ');
 
-    if (domains.length) {
-      // Filter ON: domain-targeted queries without quotes/@ that Serper free often blocks.
-      // Still scoped to the pasted domains; email keep-filter remains exact.
+    if (filter.mode === 'exact' && domains.length) {
       const queries: string[] = [];
       for (const d of domains.slice(0, 5)) {
         queries.push(`${core} ${d} email`);
@@ -155,7 +218,22 @@ export function buildSearchQueries(
       }
       return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
     }
-    // Filter OFF: any domain — company + free webmail (gmail / outlook / hotmail / yahoo).
+
+    if (filter.mode === 'corporate') {
+      // All company / corporate emails — not free webmail hunts
+      const queries = [
+        `${core} contact email`.trim(),
+        `${core} team email`.trim(),
+        `${core} staff directory email`.trim(),
+        `${core} company email`.trim(),
+        `${core} contact us`.trim(),
+        `${core} email address`.trim(),
+        `${core} about team`.trim(),
+      ];
+      return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
+    }
+
+    // Filter OFF: any domain — company + free webmail
     const queries = [
       `${core} contact email`.trim(),
       `${core} team email`.trim(),
@@ -190,10 +268,14 @@ export function buildSearchQueries(
       .join(' '),
   ];
 
-  if (!domains.length) {
+  if (filter.mode === 'any') {
     queries.push(
       [base, '("@gmail.com" OR "@yahoo.com" OR "@outlook.com" OR "@hotmail.com")'].join(' '),
       [base, 'email', '-linkedin', '-facebook', '-instagram', '-twitter', '-youtube'].join(' '),
+    );
+  } else if (filter.mode === 'corporate') {
+    queries.push(
+      [base, 'email', '-gmail', '-yahoo', '-outlook', '-hotmail', '-linkedin', '-facebook'].join(' '),
     );
   } else {
     queries.push(
@@ -254,9 +336,12 @@ export function normalizeHtmlForEmails(html: string): string {
 export function extractEmailsFromText(
   text: string,
   sourceUrl: string,
-  allowedDomains: string[],
+  allowedDomains: string[] | DomainFilter,
 ): ExtractedEmail[] {
   if (!text) return [];
+  const filter: DomainFilter = Array.isArray(allowedDomains)
+    ? { mode: allowedDomains.length ? 'exact' : 'any', domains: allowedDomains }
+    : allowedDomains;
   const normalized = normalizeHtmlForEmails(text);
   const seen = new Set<string>();
   const results: ExtractedEmail[] = [];
@@ -282,7 +367,7 @@ export function extractEmailsFromText(
       return;
     }
     const domain = email.split('@')[1] ?? '';
-    if (!domainAllowed(domain, allowedDomains)) return;
+    if (!emailMatchesFilter(domain, filter)) return;
     seen.add(email);
     results.push({
       email,

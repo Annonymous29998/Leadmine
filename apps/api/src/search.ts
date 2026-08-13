@@ -4,7 +4,9 @@ import { ProxyAgent, fetch as undiciFetch } from 'undici';
 import {
   crawlHostAllowed,
   extractEmailsFromText,
-  isCompanyOnlyFilter,
+  isExactCompanyHostFilter,
+  isFreeWebmailDomain,
+  type DomainFilter,
   type ExtractedEmail,
   type LogEntry,
 } from './extract.js';
@@ -264,7 +266,7 @@ function discoverContactLinks(html: string, baseUrl: string, _needsMore: boolean
 
 export async function extractFromUrls(
   urls: string[],
-  domains: string[],
+  domainsOrFilter: string[] | DomainFilter,
   maxResults: number,
   logs: LogEntry[],
   cancelled: () => boolean,
@@ -274,22 +276,27 @@ export async function extractFromUrls(
 ): Promise<ExtractedEmail[]> {
   if (maxResults <= 0) return [];
 
+  const filter: DomainFilter = Array.isArray(domainsOrFilter)
+    ? { mode: domainsOrFilter.length ? 'exact' : 'any', domains: domainsOrFilter }
+    : domainsOrFilter;
+
   const results: ExtractedEmail[] = [];
   const seen = new Set<string>();
   const scraped = new Set<string>();
-  const companyOnly = isCompanyOnlyFilter(domains);
-  // Domain filter ON + free webmail: stay on search seeds only (no deep directory wander).
-  // Domain filter ON + company hosts: stay on those hosts only.
-  // Domain filter OFF: normal crawl + link discovery.
-  const scoped = domains.length > 0;
-  const effectiveDepth = scoped && !companyOnly ? 0 : maxDepth;
+  const companyHosts = isExactCompanyHostFilter(filter);
+  const webmailExact =
+    filter.mode === 'exact' &&
+    filter.domains.length > 0 &&
+    filter.domains.every((d) => isFreeWebmailDomain(d));
+  const scoped = filter.mode === 'exact';
+  const effectiveDepth = webmailExact ? 0 : maxDepth;
 
   const queue = urls.filter((u) => {
     if (isBlockedUrl(u)) {
       log(logs, 'WARNING', `Skip blocked host: ${u}`, onLog);
       return false;
     }
-    if (companyOnly && !crawlHostAllowed(hostOf(u), domains)) {
+    if (companyHosts && !crawlHostAllowed(hostOf(u), filter)) {
       log(logs, 'WARNING', `Skip off-domain host (filter): ${u}`, onLog);
       return false;
     }
@@ -311,36 +318,36 @@ export async function extractFromUrls(
   let idx = 0;
   let active = 0;
   const depthLimit = Math.min(3, Math.max(0, effectiveDepth));
-  // Sniffy-scale page budget — crawl many sites, not just a few hundred
   const pageBudget = Math.min(
     MAX_CRAWL_QUEUE,
     Math.max(
       queue.length * 2,
-      scoped
-        ? Math.min(
-            companyOnly ? 4_000 : Math.max(queue.length, 200),
-            maxResults >= 1_000 ? 2_000 : 800,
-          )
-        : maxResults >= 50_000
-          ? 80_000
-          : maxResults >= 10_000
-            ? 40_000
-            : maxResults >= 5_000
-              ? 20_000
-              : maxResults >= 1_000
-                ? 8_000
-                : maxResults >= 500
-                  ? 3_000
-                  : Math.max(1_000, queue.length * 5),
+      scoped && webmailExact
+        ? Math.min(Math.max(queue.length, 200), maxResults >= 1_000 ? 2_000 : 800)
+        : companyHosts
+          ? Math.min(4_000, maxResults >= 1_000 ? 2_000 : 800)
+          : maxResults >= 50_000
+            ? 80_000
+            : maxResults >= 10_000
+              ? 40_000
+              : maxResults >= 5_000
+                ? 20_000
+                : maxResults >= 1_000
+                  ? 8_000
+                  : maxResults >= 500
+                    ? 3_000
+                    : Math.max(1_000, queue.length * 5),
     ),
   );
-  if (scoped) {
+  if (filter.mode === 'corporate') {
+    log(logs, 'INFO', 'Domain filter: corporate emails only (skip gmail/outlook/yahoo/…)', onLog);
+  } else if (scoped) {
     log(
       logs,
       'INFO',
-      companyOnly
-        ? `Domain filter crawl: only hosts matching ${domains.join(', ')}`
-        : `Domain filter crawl: search seeds for @${domains.join('/@')} only (no deep wander)`,
+      companyHosts
+        ? `Domain filter crawl: only hosts matching ${filter.domains.join(', ')}`
+        : `Domain filter crawl: search seeds for @${filter.domains.join('/@')} only (no deep wander)`,
       onLog,
     );
   }
@@ -377,7 +384,7 @@ export async function extractFromUrls(
           log(logs, 'WARNING', `Skip redirect to blocked host: ${finalUrl}`, onLog);
         } else {
           log(logs, 'SUCCESS', `Fetched ${finalUrl} (${text.length} bytes)`, onLog);
-          pushEmails(extractEmailsFromText(text, finalUrl, domains));
+          pushEmails(extractEmailsFromText(text, finalUrl, filter));
 
           if (results.length < maxResults && !cancelled() && depth < depthLimit && scraped.size < pageBudget) {
             for (const extra of discoverContactLinks(
@@ -385,7 +392,7 @@ export async function extractFromUrls(
               finalUrl,
               results.length < maxResults,
             )) {
-              if (companyOnly && !crawlHostAllowed(hostOf(extra), domains)) continue;
+              if (companyHosts && !crawlHostAllowed(hostOf(extra), filter)) continue;
               if (
                 !scraped.has(extra) &&
                 !queue.includes(extra) &&
