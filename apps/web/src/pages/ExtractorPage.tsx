@@ -471,10 +471,11 @@ export function ExtractorPage() {
                     placeholder="empty = all · company.com = corporate · gmail.com"
                   />
                   <p className="sniffy-hint" style={{ marginTop: '0.35rem' }}>
-                    <strong>Empty</strong> = company + Gmail/Outlook/Yahoo.{' '}
-                    <code>company.com</code> = all corporate only.{' '}
-                    <code>gmail.com</code> = that domain only. Generic inboxes (info@, support@)
-                    are always skipped.
+                    <strong>Empty</strong> = person emails on company domains + Gmail/Outlook/Yahoo.{' '}
+                    Type <code>company.com</code> or <code>company</code> = person emails on{' '}
+                    <strong>any</strong> company domain (e.g. john.smith@acme.io, jane@stripe.com)
+                    — not only @company.com. Type <code>acme.com</code> for one firm only.{' '}
+                    info@ / support@ / noreply@ are always skipped.
                   </p>
                 </div>
                 <div>
