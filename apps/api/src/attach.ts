@@ -369,7 +369,13 @@ export async function registerApp(
     }
 
     const domains = b.domains ?? b.domain ?? '';
-    const maxResults = Math.min(250_000, Math.max(1, Number(b.maxResults) || 10_000));
+    const parsedMax = Number(b.maxResults);
+    if (!Number.isFinite(parsedMax) || parsedMax < 1) {
+      return reply.status(400).send({
+        error: 'maxResults must be a number between 1 and 250,000.',
+      });
+    }
+    const maxResults = Math.min(250_000, Math.max(1, Math.floor(parsedMax)));
     const maxDepth = Math.min(3, Math.max(1, Number(b.maxDepth) || 2));
 
     if (!process.env.SERPAPI_KEY?.trim() && !process.env.SERPER_API_KEY?.trim()) {

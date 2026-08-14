@@ -283,6 +283,15 @@ export function ExtractorPage() {
       updateStatus('Add at least one proxy, or turn off Use Proxy.', 'warn');
       return;
     }
+    const max = Math.floor(Number(maxResults));
+    if (!Number.isFinite(max) || max < 1) {
+      updateStatus('Max Results must be at least 1.', 'danger');
+      return;
+    }
+    if (max > 250_000) {
+      updateStatus('Max Results cannot exceed 250,000.', 'danger');
+      return;
+    }
 
     setResults([]);
     setPage(1);
@@ -297,7 +306,7 @@ export function ExtractorPage() {
         searchTerms: terms,
         location: location.trim(),
         domains: domainsDraft,
-        maxResults,
+        maxResults: max,
         maxDepth: 3,
         useProxy,
         proxyList,
@@ -471,23 +480,28 @@ export function ExtractorPage() {
                   <label className="sniffy-label" htmlFor="maxResults">
                     Max Results
                   </label>
-                  <select
+                  <input
                     id="maxResults"
-                    className="sniffy-select"
+                    type="number"
+                    className="sniffy-input"
+                    min={1}
+                    max={250_000}
+                    step={1}
                     value={maxResults}
-                    onChange={(e) => setMaxResults(Number(e.target.value))}
-                  >
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                    <option value={500}>500</option>
-                    <option value={1000}>1,000</option>
-                    <option value={5000}>5,000</option>
-                    <option value={10000}>10,000</option>
-                    <option value={25000}>25,000</option>
-                    <option value={50000}>50,000</option>
-                    <option value={100000}>100,000</option>
-                    <option value={250000}>250,000</option>
-                  </select>
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '') {
+                        setMaxResults(0);
+                        return;
+                      }
+                      const n = parseInt(v, 10);
+                      if (Number.isFinite(n)) setMaxResults(n);
+                    }}
+                    placeholder="e.g. 500"
+                  />
+                  <p className="sniffy-hint" style={{ marginTop: '0.35rem' }}>
+                    Type any number from 1 to 250,000 — extraction stops at exactly that many leads.
+                  </p>
                 </div>
               </div>
 
