@@ -471,9 +471,10 @@ export function ExtractorPage() {
                     placeholder="empty = all · company.com = corporate · gmail.com"
                   />
                   <p className="sniffy-hint" style={{ marginTop: '0.35rem' }}>
-                    <strong>Empty</strong> = company + Gmail/Outlook/Yahoo. Type{' '}
-                    <code>company.com</code> (or <code>company</code>) = all corporate domains
-                    only. Type <code>gmail.com, yahoo.com</code> = only those free-mail domains.
+                    <strong>Empty</strong> = company + Gmail/Outlook/Yahoo.{' '}
+                    <code>company.com</code> = all corporate only.{' '}
+                    <code>gmail.com</code> = that domain only. Generic inboxes (info@, support@)
+                    are always skipped.
                   </p>
                 </div>
                 <div>

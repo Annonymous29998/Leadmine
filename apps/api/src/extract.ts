@@ -1,4 +1,5 @@
 import { isBareTld, quoteIfNeeded, resolveGeo } from './geo.js';
+import { isRoleOrGenericEmail } from './validate.js';
 
 export type ExtractedEmail = {
   email: string;
@@ -368,6 +369,7 @@ export function extractEmailsFromText(
     }
     const domain = email.split('@')[1] ?? '';
     if (!emailMatchesFilter(domain, filter)) return;
+    if (isRoleOrGenericEmail(email)) return;
     seen.add(email);
     results.push({
       email,

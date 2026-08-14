@@ -14,9 +14,11 @@ describe('leadQualityScore (Sniffy ≥60)', () => {
   });
 
   it('rejects role / noreply below threshold', () => {
-    assert.ok(leadQualityScore('info@acme.com') < 60);
+    assert.equal(leadQualityScore('info@acme.com'), 0);
+    assert.equal(leadQualityScore('support@company.io'), 0);
     assert.equal(leadQualityScore('noreply@x.com'), 0);
-    assert.ok(!isValidEmailSyntax('noreply@x.com') || leadQualityScore('noreply@x.com') < 60);
+    assert.equal(isValidEmailSyntax('info@acme.com'), false);
+    assert.equal(isValidEmailSyntax('noreply@x.com'), false);
   });
 
   it('rejects placeholders', () => {
@@ -48,7 +50,7 @@ describe('validateEmailAddress', () => {
   it('flags low-quality leads', async () => {
     const res = await validateEmailAddress('info@example.com');
     assert.equal(res.ok, false);
-    assert.ok(res.reason.includes('low lead quality') || res.reason.includes('MX') || res.reason.includes('syntax'));
+    assert.ok(/role|generic|syntax/i.test(res.reason));
   });
 });
 

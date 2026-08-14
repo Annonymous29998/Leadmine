@@ -31,6 +31,7 @@ const ROLE_LOCALS = new Set([
   'contact',
   'support',
   'help',
+  'helpdesk',
   'admin',
   'sales',
   'marketing',
@@ -40,10 +41,12 @@ const ROLE_LOCALS = new Set([
   'mail',
   'email',
   'enquiries',
+  'enquiry',
   'inquiry',
   'inquiries',
   'customerservice',
   'customer-service',
+  'customersupport',
   'newsletter',
   'news',
   'press',
@@ -56,7 +59,69 @@ const ROLE_LOCALS = new Set([
   'privacy',
   'legal',
   'security',
+  'reception',
+  'general',
+  'feedback',
+  'service',
+  'services',
+  'orders',
+  'order',
+  'bookings',
+  'booking',
+  'reservations',
+  'reservation',
+  'admissions',
+  'registrar',
+  'volunteer',
+  'volunteers',
+  'donate',
+  'donations',
+  'outreach',
+  'communications',
+  'comms',
+  'partnerships',
+  'servicedesk',
+  'techsupport',
+  'webmaster',
+  'postmaster',
+  'hostmaster',
+  'abuse',
+  'root',
+  'officehours',
+  'customerservices',
 ]);
+
+/** Hard reject: info@, support@, noreply@, etc. — not personal leads. */
+export function isRoleOrGenericEmail(email: string): boolean {
+  const e = email.trim().toLowerCase();
+  const at = e.indexOf('@');
+  if (at < 1) return true;
+  const local = e.slice(0, at);
+  const base = local.split(/[._+\-]/)[0] ?? local;
+
+  if (INVALID_LOCALS.has(base) || INVALID_LOCALS.has(local)) return true;
+  if (ROLE_LOCALS.has(base) || ROLE_LOCALS.has(local)) return true;
+
+  if (/no[-_.]?reply|donotreply|do-not-reply|mailer[-.]?daemon|unsubscribe|bounce|auto[-_.]?reply/.test(local)) {
+    return true;
+  }
+
+  if (
+    /^(info|support|contact|sales|help|admin|office|team|mail|hr|jobs|careers|press|media|billing|legal|privacy|security|newsletter|marketing|service|reception|general|feedback|enquir|inquir|customer)([._+\-]|$|\d)/.test(
+      local,
+    )
+  ) {
+    return true;
+  }
+
+  // Every segment is a role word → department@ style
+  const segments = local.split(/[._+\-]/).filter(Boolean);
+  if (segments.length > 1 && segments.every((s) => ROLE_LOCALS.has(s) || INVALID_LOCALS.has(s))) {
+    return true;
+  }
+
+  return false;
+}
 
 const DISPOSABLE_HINTS = [
   'mailinator.com',
@@ -106,6 +171,7 @@ export function isValidEmailSyntax(email: string): boolean {
   if (local.includes('%') || local.includes(' ')) return false;
   if (local.length < 3) return false;
   if (/^\d+[a-z]{0,2}$/i.test(local)) return false; // mostly numeric
+  if (isRoleOrGenericEmail(e)) return false;
   return true;
 }
 
@@ -116,11 +182,13 @@ export function leadQualityScore(email: string): number {
   const [local, domain] = e.split('@');
   if (!local || !domain) return 0;
 
+  if (isRoleOrGenericEmail(e)) return 0;
+
   let score = 50;
   const base = local.split(/[._+\-]/)[0] ?? local;
 
-  // Generic / role prefixes (Sniffy generic_prefixes)
-  if (ROLE_LOCALS.has(base) || ROLE_LOCALS.has(local)) score -= 30;
+  // Generic / role prefixes (Sniffy generic_prefixes) — score 0 above, belt-and-suspenders
+  if (ROLE_LOCALS.has(base) || ROLE_LOCALS.has(local)) return 0;
   if (INVALID_LOCALS.has(base)) return 0;
 
   // Person-like patterns
@@ -283,6 +351,10 @@ export async function validateEmailAddress(email: string): Promise<ValidationRes
   const e = email.trim().toLowerCase();
   if (!isValidEmailSyntax(e)) {
     return { email: e, ok: false, reason: 'invalid syntax' };
+  }
+
+  if (isRoleOrGenericEmail(e)) {
+    return { email: e, ok: false, reason: 'role / generic mailbox (not a personal lead)', score: 0 };
   }
 
   const score = leadQualityScore(e);

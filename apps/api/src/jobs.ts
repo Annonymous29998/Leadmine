@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { ExtractedEmail, LogEntry } from './extract.js';
 import { parseDomainFilter } from './extract.js';
 import { runExtraction, type ExtractBody, type ExtractResult } from './extract-job.js';
-import { leadQualityScore, validateEmailAddress } from './validate.js';
+import { isRoleOrGenericEmail, leadQualityScore, validateEmailAddress } from './validate.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const DEFAULT_EXPORTS =
@@ -286,6 +286,7 @@ export async function startJob(
               !seen.has(email) &&
               !validating.has(email) &&
               job.results.length < totalTarget &&
+              !isRoleOrGenericEmail(email) &&
               leadQualityScore(email) >= 60
             ) {
               validating.add(email);
