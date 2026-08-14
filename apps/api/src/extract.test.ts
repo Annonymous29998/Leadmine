@@ -61,13 +61,13 @@ describe('extractEmailsFromText', () => {
   it('decodes entities and obfuscation', () => {
     const html = `
       <p>Reach jane.doe&#64;acme.com or sales&#64;acme.com</p>
-      <p>Also hello [at] brand [dot] org</p>
+      <p>Also mary.smith [at] brand [dot] org</p>
       <script>var x = "ignore@evil.com"</script>
     `;
     const emails = extractEmailsFromText(html, 'https://acme.com', ['acme.com', 'brand.org']);
     const set = new Set(emails.map((e) => e.email));
     assert.ok(set.has('jane.doe@acme.com'));
-    assert.ok(set.has('hello@brand.org'));
+    assert.ok(set.has('mary.smith@brand.org'));
     assert.ok(!set.has('sales@acme.com'));
     assert.ok(!set.has('ignore@evil.com'));
   });
