@@ -443,31 +443,40 @@ async function serpApiPage(
   geo: GeoHint,
   num = 10,
 ): Promise<{ links: string[]; error?: string }> {
-  const params = new URLSearchParams({
-    q: query,
-    api_key: apiKey,
-    engine: 'google',
-    num: String(Math.min(100, Math.max(10, num))),
-    start: String(start),
-  });
-  if (geo.location) params.set('location', geo.location);
-  if (geo.gl) params.set('gl', geo.gl);
-  if (geo.hl) params.set('hl', geo.hl);
-  if (geo.google_domain) params.set('google_domain', geo.google_domain);
+  const run = async (useLocation: boolean) => {
+    const params = new URLSearchParams({
+      q: query,
+      api_key: apiKey,
+      engine: 'google',
+      num: String(Math.min(100, Math.max(10, num))),
+      start: String(start),
+    });
+    if (useLocation && geo.location) params.set('location', geo.location);
+    if (geo.gl) params.set('gl', geo.gl);
+    if (geo.hl) params.set('hl', geo.hl);
+    if (geo.google_domain) params.set('google_domain', geo.google_domain);
 
-  const res = await fetch(`https://serpapi.com/search.json?${params}`);
-  const data = (await res.json()) as {
-    error?: string;
-    organic_results?: { link?: string }[];
+    const res = await fetch(`https://serpapi.com/search.json?${params}`);
+    const data = (await res.json()) as {
+      error?: string;
+      organic_results?: { link?: string }[];
+    };
+    if (!res.ok || data.error) {
+      return { links: [] as string[], error: data.error || `SerpAPI HTTP ${res.status}` };
+    }
+    const links: string[] = [];
+    for (const item of data.organic_results ?? []) {
+      if (item.link) links.push(item.link);
+    }
+    return { links, error: undefined as string | undefined };
   };
-  if (!res.ok || data.error) {
-    return { links: [], error: data.error || `SerpAPI HTTP ${res.status}` };
+
+  let out = await run(true);
+  // Retry with gl/hl only — unsupported free-text locations used to kill the whole hunt
+  if (out.error && /unsupported .*location/i.test(out.error) && geo.location) {
+    out = await run(false);
   }
-  const links: string[] = [];
-  for (const item of data.organic_results ?? []) {
-    if (item.link) links.push(item.link);
-  }
-  return { links };
+  return out;
 }
 
 /** Serper client: POST https://google.serper.dev/search */

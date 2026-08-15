@@ -91,6 +91,12 @@ describe('resolveGeo', () => {
     const g = resolveGeo('London, UK');
     assert.equal(g.gl, 'gb');
   });
+
+  it('maps Philadelphia, PA, USA to SerpAPI canonical location', () => {
+    const g = resolveGeo('Philadelphia, PA, USA');
+    assert.equal(g.gl, 'us');
+    assert.equal(g.location, 'Philadelphia,Pennsylvania,United States');
+  });
 });
 
 describe('buildSearchQueries', () => {

@@ -83,10 +83,67 @@ const US_PLACES = [
   'florida', 'washington', 'ohio', 'georgia', 'michigan',
 ];
 
-const BARE_TLDS = new Set([
-  'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'info', 'biz', 'io', 'co', 'uk',
-  'us', 'ng', 'za', 'au', 'ca', 'in', 'de', 'fr', 'es', 'it', 'br', 'mx', 'jp', 'cn',
-]);
+const US_STATE_ABBR: Record<string, string> = {
+  al: 'Alabama', ak: 'Alaska', az: 'Arizona', ar: 'Arkansas', ca: 'California',
+  co: 'Colorado', ct: 'Connecticut', de: 'Delaware', fl: 'Florida', ga: 'Georgia',
+  hi: 'Hawaii', id: 'Idaho', il: 'Illinois', in: 'Indiana', ia: 'Iowa',
+  ks: 'Kansas', ky: 'Kentucky', la: 'Louisiana', me: 'Maine', md: 'Maryland',
+  ma: 'Massachusetts', mi: 'Michigan', mn: 'Minnesota', ms: 'Mississippi', mo: 'Missouri',
+  mt: 'Montana', ne: 'Nebraska', nv: 'Nevada', nh: 'New Hampshire', nj: 'New Jersey',
+  nm: 'New Mexico', ny: 'New York', nc: 'North Carolina', nd: 'North Dakota', oh: 'Ohio',
+  ok: 'Oklahoma', or: 'Oregon', pa: 'Pennsylvania', ri: 'Rhode Island', sc: 'South Carolina',
+  sd: 'South Dakota', tn: 'Tennessee', tx: 'Texas', ut: 'Utah', vt: 'Vermont',
+  va: 'Virginia', wa: 'Washington', wv: 'West Virginia', wi: 'Wisconsin', wy: 'Wyoming',
+  dc: 'District of Columbia',
+};
+
+/**
+ * SerpAPI only accepts canonical Google locations
+ * (e.g. Philadelphia,Pennsylvania,United States) — not "Philadelphia, PA, USA".
+ */
+export function toSerpApiLocation(raw: string): string | undefined {
+  const t = normalizeLocationText(raw);
+  if (!t) return undefined;
+
+  // Already looks canonical: City,State,United States
+  if (/,\s*[A-Za-z .]+,\s*United States$/i.test(t) && !/\b[A-Z]{2}\b/.test(t.split(',')[1] || '')) {
+    return t.replace(/\s*,\s*/g, ',');
+  }
+
+  // City, ST[, USA/US/United States]
+  const m = t.match(
+    /^([^,]+),\s*([A-Za-z]{2})(?:\s*,\s*(?:USA|US|United States|America))?$/i,
+  );
+  if (m) {
+    const city = m[1].trim();
+    const state = US_STATE_ABBR[m[2].toLowerCase()];
+    if (state) return `${city},${state},United States`;
+  }
+
+  // City, State Name[, USA]
+  const m2 = t.match(
+    /^([^,]+),\s*([A-Za-z .]+?)(?:\s*,\s*(?:USA|US|United States|America))?$/i,
+  );
+  if (m2) {
+    const city = m2[1].trim();
+    const statePart = m2[2].trim();
+    const asAbbr = US_STATE_ABBR[statePart.toLowerCase()];
+    if (asAbbr) return `${city},${asAbbr},United States`;
+    const known = Object.values(US_STATE_ABBR).find(
+      (s) => s.toLowerCase() === statePart.toLowerCase(),
+    );
+    if (known) return `${city},${known},United States`;
+  }
+
+  // Bare US city we recognize — let SerpAPI resolve by city name alone
+  const lower = t.toLowerCase().replace(/,?\s*(usa|us|united states)$/i, '').trim();
+  if (US_PLACES.some((p) => lower === p || lower.startsWith(p + ','))) {
+    const city = t.split(',')[0].trim();
+    return city;
+  }
+
+  return t;
+}
 
 export function normalizeLocationText(location: string): string {
   return location.trim().replace(/\s+/g, ' ');
@@ -97,12 +154,13 @@ export function resolveGeo(location: string): GeoHint {
   if (!raw) return {};
 
   const lower = raw.toLowerCase();
+  const serpLocation = toSerpApiLocation(raw);
 
   for (const rule of COUNTRIES) {
     for (const alias of rule.aliases) {
       if (lower === alias || lower.includes(alias)) {
         return {
-          location: raw,
+          location: serpLocation || raw,
           gl: rule.gl,
           hl: rule.hl,
           google_domain: rule.google_domain,
@@ -111,9 +169,19 @@ export function resolveGeo(location: string): GeoHint {
     }
   }
 
-  if (US_PLACES.some((p) => lower === p || lower.includes(p))) {
+  if (US_PLACES.some((p) => lower === p || lower.includes(p)) || toSerpApiLocation(raw)?.includes('United States')) {
     return {
-      location: raw,
+      location: serpLocation || raw,
+      gl: 'us',
+      hl: 'en',
+      google_domain: 'google.com',
+    };
+  }
+
+  // City, ST pattern without being in US_PLACES list
+  if (serpLocation && /United States$/.test(serpLocation)) {
+    return {
+      location: serpLocation,
       gl: 'us',
       hl: 'en',
       google_domain: 'google.com',
@@ -121,8 +189,13 @@ export function resolveGeo(location: string): GeoHint {
   }
 
   // Unknown place — still pass as SerpAPI location for Google geo bias
-  return { location: raw, hl: 'en' };
+  return { location: serpLocation || raw, hl: 'en' };
 }
+
+const BARE_TLDS = new Set([
+  'com', 'org', 'net', 'edu', 'gov', 'mil', 'int', 'info', 'biz', 'io', 'co', 'uk',
+  'us', 'ng', 'za', 'au', 'ca', 'in', 'de', 'fr', 'es', 'it', 'br', 'mx', 'jp', 'cn',
+]);
 
 export function isBareTld(domain: string): boolean {
   return BARE_TLDS.has(domain.toLowerCase()) || !domain.includes('.');
