@@ -143,7 +143,6 @@ export async function runExtraction(
           : body.maxResults >= 5_000
             ? 6
             : 4;
-    const queries = allQueries.slice(0, queryCap);
     push(
       'INFO',
       filter.mode === 'corporate'
@@ -155,7 +154,7 @@ export async function runExtraction(
     if (webmailExact) {
       push(
         'INFO',
-        `Webmail/ISP hunt: ${queries.length} Google queries, deep crawl enabled (skip Xfinity/Comcast brand pages)`,
+        `Webmail/ISP hunt: keep searching until ${body.maxResults} leads or sources run out`,
       );
     }
     const searchKeys = { serperKey, serpApiKey: serpKey };
@@ -169,45 +168,96 @@ export async function runExtraction(
           economy ? 100 : 200,
           Math.max(25, Math.ceil(Math.min(body.maxResults, 1_000) * (economy ? 0.25 : 0.5))),
         );
-    const urls = await searchWeb(
-      queries,
-      searchKeys,
-      body.maxResults,
-      body.location,
-      logs,
-      opts.cancelled,
-      opts.onLog,
-      {
-        seedLimit,
-        maxPages: webmailExact
-          ? body.maxResults >= 1_000
-            ? 5
-            : body.maxResults >= 300
-              ? 4
-              : 3
-          : economy || body.maxResults < 1_000
-            ? 1
-            : 2,
-        queriesLimit: queries.length,
-        singleProvider: false,
-      },
-    );
-    push('INFO', `Crawl starting with ${urls.length} seed URL(s)…`);
 
-    const candidateCap = Math.min(
-      250_000,
-      Math.max(body.maxResults * 15, body.maxResults + 5_000, 3_000),
-    );
-    raw = await extractFromUrls(
-      urls,
-      filter,
-      candidateCap,
-      logs,
-      opts.cancelled,
-      opts.onLog,
-      webmailExact ? Math.max(2, body.maxDepth ?? 2) : body.maxDepth ?? 1,
-      crawl,
-    );
+    const maxRounds = webmailExact
+      ? Math.min(10, Math.max(3, Math.ceil(body.maxResults / 200)))
+      : 1;
+    const seenUrls = new Set<string>();
+    const seenEmails = new Set<string>();
+    const depth = webmailExact ? Math.max(2, body.maxDepth ?? 2) : body.maxDepth ?? 1;
+
+    for (let round = 1; round <= maxRounds; round++) {
+      if (opts.cancelled()) break;
+      if (seenEmails.size >= body.maxResults) break;
+
+      const need = body.maxResults - seenEmails.size;
+      const qEnd = Math.min(allQueries.length, queryCap + (round - 1) * 4);
+      const queries = allQueries.slice(0, Math.max(queryCap, qEnd));
+      if (!queries.length) break;
+
+      push(
+        'INFO',
+        `Hunt round ${round}/${maxRounds}: need ${need} more lead(s), ${queries.length} Google quer${queries.length === 1 ? 'y' : 'ies'}`,
+      );
+
+      let urls: string[] = [];
+      try {
+        urls = await searchWeb(
+          queries,
+          searchKeys,
+          body.maxResults,
+          body.location,
+          logs,
+          opts.cancelled,
+          opts.onLog,
+          {
+            seedLimit,
+            maxPages: webmailExact
+              ? body.maxResults >= 1_000
+                ? 5
+                : body.maxResults >= 300
+                  ? 4
+                  : 3
+              : economy || body.maxResults < 1_000
+                ? 1
+                : 2,
+            queriesLimit: queries.length,
+            singleProvider: false,
+          },
+        );
+      } catch (err) {
+        if (round === 1) throw err;
+        push('WARNING', `Hunt round ${round} search stopped: ${(err as Error).message}`);
+        break;
+      }
+
+      const freshUrls = urls.filter((u) => {
+        if (seenUrls.has(u)) return false;
+        seenUrls.add(u);
+        return true;
+      });
+      if (!freshUrls.length) {
+        push('INFO', `Hunt round ${round}: no new URLs — stopping search`);
+        break;
+      }
+
+      push('INFO', `Crawl starting with ${freshUrls.length} new seed URL(s)…`);
+      const candidateCap = Math.min(
+        250_000,
+        Math.max(need * 15, need + 2_000, 1_500),
+      );
+      const batch = await extractFromUrls(
+        freshUrls,
+        filter,
+        candidateCap,
+        logs,
+        () => opts.cancelled() || seenEmails.size >= body.maxResults,
+        opts.onLog,
+        depth,
+        crawl,
+      );
+      for (const e of batch) {
+        raw.push(e);
+        seenEmails.add(e.email.toLowerCase());
+      }
+
+      push('INFO', `Hunt round ${round} done: ${seenEmails.size} unique candidate(s) so far`);
+      if (seenEmails.size >= body.maxResults) break;
+      if (freshUrls.length < 8) {
+        push('INFO', 'Few new seeds left — ending hunt rounds');
+        break;
+      }
+    }
   }
 
   if (opts.cancelled()) push('WARNING', 'Cancelled by client');

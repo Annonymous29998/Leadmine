@@ -131,14 +131,16 @@ export function getJob(id: string): JobState | null {
 export function getProgressPayload(job: JobState) {
   const fresh = job.new_results.splice(0, job.new_results.length);
   const done = job.status === 'completed' || job.status === 'stopped';
+  const target = Math.min(250_000, Math.max(1, job.params?.maxResults || 1));
   return {
     status: job.status,
     progress: job.progress,
+    target,
     stats: job.stats,
     currently_crawling: job.currently_crawling,
     new_results: fresh,
-    // Full table only when finished (avoids shipping 10k–100k rows every poll)
-    results: done ? job.results : undefined,
+    // Stream full table while running (capped) so the UI shows emails live
+    results: done ? job.results : job.results.length <= 3_000 ? [...job.results] : undefined,
     results_total: job.results.length,
     error: job.error,
     logs: job.logs.slice(-80),
@@ -209,6 +211,22 @@ export async function startJob(
     const depth = Math.min(3, Math.max(1, body.maxDepth ?? 1));
     const totalTarget = Math.min(250_000, Math.max(1, body.maxResults));
 
+    const syncProgress = () => {
+      // Real progress = leads found / Max Results (never fake 100% until finished)
+      if (job.status === 'completed') {
+        job.progress = 100;
+        return;
+      }
+      const leadPct = (job.results.length / totalTarget) * 100;
+      if (job.results.length > 0) {
+        job.progress = Math.min(99, Math.max(1, Math.round(leadPct)));
+        return;
+      }
+      // No leads yet: show crawl activity only (capped low so bar isn't misleading)
+      const pageHint = Math.min(12, Math.floor(job.stats.pages_crawled / 25));
+      job.progress = Math.max(1, pageHint);
+    };
+
     const pushLead = (email: string, score: number, sourceUrl: string) => {
       if (job.results.length >= totalTarget) return;
       if (seen.has(email)) return;
@@ -223,6 +241,15 @@ export async function startJob(
       job.results.push(row);
       job.new_results.push(row);
       job.stats.leads_found = job.results.length;
+      syncProgress();
+    };
+
+    const dropLead = (email: string) => {
+      if (!seen.has(email)) return;
+      seen.delete(email);
+      job.results = job.results.filter((r) => r.value !== email);
+      job.stats.leads_found = job.results.length;
+      syncProgress();
     };
 
     try {
@@ -232,51 +259,26 @@ export async function startJob(
         if (remaining <= 0) break;
 
         const term = terms[ti];
-        const termStart = 5 + (ti / terms.length) * 85;
-        const termEnd = 5 + ((ti + 1) / terms.length) * 85;
-        job.progress = Math.round(termStart);
-
-        const bumpProgress = (phase: 'search' | 'crawl' | 'validate') => {
-          const span = termEnd - termStart;
-          const leadFrac = Math.min(1, job.results.length / Math.max(1, totalTarget));
-          const pageFrac = Math.min(1, job.stats.pages_crawled / Math.max(40, totalTarget / 50));
-          let within = 0.08;
-          if (phase === 'crawl') {
-            within = 0.15 + pageFrac * 0.45 + leadFrac * 0.25;
-          } else if (phase === 'validate') {
-            within = 0.7 + leadFrac * 0.25;
-          }
-          job.progress = Math.min(
-            95,
-            Math.max(job.progress, Math.round(termStart + span * Math.min(1, within))),
-          );
-        };
+        syncProgress();
 
         const pushLog = (entry: LogEntry) => {
           job.logs.push(entry);
           const msg = entry.message;
-          if (/search:/i.test(msg) || msg.includes('web search')) {
-            bumpProgress('search');
-          }
           if (msg.startsWith('Fetching ')) {
             job.currently_crawling = [msg.slice('Fetching '.length)];
-            bumpProgress('crawl');
           }
           if (msg.startsWith('Fetched ')) {
             job.stats.pages_crawled += 1;
             job.currently_crawling = [];
-            bumpProgress('crawl');
+            syncProgress();
           }
           if (msg.startsWith('Failed ') || msg.startsWith('Skip ')) {
             if (msg.startsWith('Failed ')) job.stats.pages_failed += 1;
             job.currently_crawling = [];
-            bumpProgress('crawl');
           }
           if (msg.startsWith('Found:') || msg.startsWith('Candidate:')) {
             job.stats.emails_found += 1;
-            bumpProgress('crawl');
 
-            // Sniffy-style live table: validate as soon as found, stream into results
             const email = msg
               .replace(/^(Found:|Candidate:)\s*/i, '')
               .split(/\s+/)[0]
@@ -289,18 +291,27 @@ export async function startJob(
               !isRoleOrGenericEmail(email) &&
               leadQualityScore(email) >= 60
             ) {
+              // Show in the results table immediately; MX check may drop bad ones later
+              const provisional = leadQualityScore(email);
+              pushLead(email, provisional, 'LeadMine Crawl');
               validating.add(email);
               void validateEmailAddress(email).then((res) => {
                 validating.delete(email);
-                if (!res.ok || checkCancel()) return;
-                if (job.results.length >= totalTarget) return;
-                pushLead(email, res.score ?? leadQualityScore(email), 'LeadMine Crawl');
-                bumpProgress('validate');
+                if (checkCancel()) return;
+                if (!res.ok) {
+                  dropLead(email);
+                  return;
+                }
+                const existing = job.results.find((r) => r.value === email);
+                if (existing) {
+                  existing.score = Math.max(existing.score, res.score ?? provisional);
+                } else if (job.results.length < totalTarget) {
+                  pushLead(email, res.score ?? provisional, 'LeadMine Crawl');
+                }
+                syncProgress();
               });
             }
-          }
-          if (msg.startsWith('Validating')) {
-            bumpProgress('validate');
+            syncProgress();
           }
           if (msg.startsWith('Valid:')) {
             const email = msg.replace(/^Valid:\s*/, '').split(/\s+/)[0]?.toLowerCase();
@@ -314,7 +325,10 @@ export async function startJob(
                 if (existing) existing.score = Math.max(existing.score, score);
               }
             }
-            bumpProgress('validate');
+            syncProgress();
+          }
+          if (/hunt round|Google seed|Crawl starting|Search returned/i.test(msg)) {
+            syncProgress();
           }
         };
 
@@ -372,6 +386,7 @@ export async function startJob(
           }
           pushLead(em.email, leadQualityScore(em.email), em.sourceUrl);
         }
+        syncProgress();
       }
 
       if (!job.results.length && !checkCancel()) {

@@ -238,6 +238,7 @@ export const api = {
     request<{
       status: string;
       progress: number;
+      target?: number;
       stats?: {
         pages_crawled: number;
         pages_failed: number;

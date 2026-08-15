@@ -38,6 +38,7 @@ export function ExtractorPage() {
   const [status, setStatus] = useState('');
   const [statusTone, setStatusTone] = useState<'info' | 'ok' | 'warn' | 'danger'>('info');
   const [progress, setProgress] = useState(0);
+  const [target, setTarget] = useState(0);
   const [stats, setStats] = useState<ProgressStats>({
     pages_crawled: 0,
     pages_failed: 0,
@@ -98,10 +99,11 @@ export function ExtractorPage() {
       try {
         const data = await api.getProgress();
         setProgress(data.progress || 0);
+        if (typeof data.target === 'number' && data.target > 0) setTarget(data.target);
         if (data.stats) setStats(data.stats);
         setCrawling(data.currently_crawling || []);
 
-        // Prefer incremental new_results while running; full snapshot when finished
+        // Live table: prefer full snapshot; always merge incremental new_results
         if (data.results?.length) {
           setResults(data.results);
         } else if (data.new_results?.length) {
@@ -112,24 +114,32 @@ export function ExtractorPage() {
           setLiveLogs(
             data.logs
               .filter((l) =>
-                /^(Failed|Skip|Fetching|Found:|Valid:|Rejected:|Serper|SerpAPI|Dual search|Google seed|Geo bias)/i.test(
+                /^(Failed|Skip|Fetching|Found:|Valid:|Rejected:|Serper|SerpAPI|Dual search|Google seed|Geo bias|Hunt round|Crawl starting|Search returned|Webmail)/i.test(
                   l.message,
                 ),
               )
-              .slice(-10)
+              .slice(-12)
               .map((l) => `[${l.level}] ${l.message}`),
           );
         }
+
+        const leads = data.stats?.leads_found ?? data.results?.length ?? 0;
+        const tgt = data.target || target || 0;
 
         // Clarify early phase: Google search runs before any page crawl
         if (
           (data.status === 'running' || data.status === 'starting') &&
           (data.stats?.pages_crawled ?? 0) === 0 &&
-          !(data.results?.length || data.new_results?.length)
+          !leads
         ) {
           updateStatus('Searching Google for URLs (crawl starts after this)…', 'info');
         } else if (data.status === 'running' || data.status === 'starting') {
-          updateStatus('Extraction in progress', 'info');
+          updateStatus(
+            tgt > 0
+              ? `Extracting… ${leads} / ${tgt} leads · ${data.stats?.pages_crawled ?? 0} pages`
+              : 'Extraction in progress',
+            'info',
+          );
         }
 
         const final = ['completed', 'stopped', 'error', 'idle'];
@@ -214,8 +224,6 @@ export function ExtractorPage() {
             updateStatus(msg, 'danger');
             setModal({ open: true, title: 'Extraction Status', body: msg });
           }
-        } else {
-          updateStatus(data.status || 'Processing...', 'info');
         }
       } catch (err) {
         stopPoll();
@@ -227,8 +235,8 @@ export function ExtractorPage() {
           body: (err as Error).message || 'Error checking progress',
         });
       }
-    }, 1000);
-  }, []);
+    }, 500);
+  }, [target]);
 
   useEffect(() => () => stopPoll(), []);
 
@@ -296,6 +304,7 @@ export function ExtractorPage() {
     setResults([]);
     setPage(1);
     setProgress(0);
+    setTarget(max);
     setStats({ pages_crawled: 0, pages_failed: 0, emails_found: 0, leads_found: 0 });
     setShowDownload(false);
     setRunning(true);
@@ -605,7 +614,9 @@ export function ExtractorPage() {
                 className="sniffy-progress-bar"
                 style={{ width: `${Math.max(progress, running ? 2 : 0)}%` }}
               >
-                {Math.round(progress)}%
+                {target > 0
+                  ? `${stats.leads_found} / ${target} (${Math.round(progress)}%)`
+                  : `${Math.round(progress)}%`}
               </div>
             </div>
             <div className="sniffy-crawling">
@@ -684,7 +695,7 @@ export function ExtractorPage() {
               {!results.length && (
                 <p style={{ color: 'var(--sn-muted)', textAlign: 'center', padding: '2rem 0' }}>
                   {running
-                    ? 'Crawling… valid leads appear here live as they are verified.'
+                    ? 'Searching & crawling… emails appear here live as soon as they are found.'
                     : 'Results will appear here as leads are found…'}
                 </p>
               )}
