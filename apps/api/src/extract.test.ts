@@ -122,6 +122,13 @@ describe('buildSearchQueries', () => {
     assert.ok(!qs.some((q) => /"@/.test(q)), 'should not use quoted @domain (Serper free blocks)');
   });
 
+  it('simple ISP queries hunt @comcast.net not brand contact pages', () => {
+    const qs = buildSearchQueries('homeowner', 'Philadelphia, PA, USA', ['comcast.net'], 'simple');
+    assert.ok(qs.some((q) => q.includes('@comcast.net')));
+    assert.ok(qs.some((q) => q.includes('directory') || q.includes('hoa')));
+    assert.ok(!qs.some((q) => /comcast\.net contact$/i.test(q)));
+  });
+
   it('simple queries for corporate mode avoid free-webmail hunts', () => {
     const qs = buildSearchQueries('CEO', 'Lagos', parseDomainFilter('company.com'), 'simple');
     assert.ok(qs.some((q) => q.includes('contact email') || q.includes('company email')));

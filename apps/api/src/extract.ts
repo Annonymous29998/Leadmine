@@ -221,11 +221,25 @@ export function buildSearchQueries(
 
     if (filter.mode === 'exact' && domains.length) {
       const queries: string[] = [];
+      const webmailOnly = domains.every((d) => isFreeWebmailDomain(d));
       for (const d of domains.slice(0, 5)) {
-        queries.push(`${core} ${d} email`);
-        queries.push(`${core} ${d} contact`);
-        queries.push(`${d} email ${core}`);
-        queries.push(`${subj} ${d} email`.trim());
+        if (webmailOnly) {
+          // Hunt literal addresses on directories — avoid "comcast.net contact" (hits Xfinity stores).
+          const at = `@${d}`;
+          queries.push(`${at} ${place} ${subj}`.trim());
+          queries.push(`${at} ${place} email`);
+          queries.push(`${at} ${place} directory`);
+          queries.push(`${at} ${place} members`);
+          queries.push(`${subj} ${at} ${place}`.trim());
+          queries.push(`${place} ${at} list`);
+          queries.push(`${place} ${at} hoa`);
+          queries.push(`${at} ${subj} email`.trim());
+        } else {
+          queries.push(`${core} ${d} email`);
+          queries.push(`${core} ${d} contact`);
+          queries.push(`${d} email ${core}`);
+          queries.push(`${subj} ${d} email`.trim());
+        }
       }
       return [...new Set(queries.map((q) => q.replace(/\s+/g, ' ').trim()).filter(Boolean))];
     }

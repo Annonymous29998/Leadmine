@@ -2,6 +2,7 @@ import {
   buildSearchQueries,
   dedupeEmails,
   extractEmailsFromText,
+  isFreeWebmailDomain,
   parseDomainFilter,
   parseUrlList,
   type ExtractedEmail,
@@ -128,8 +129,14 @@ export async function runExtraction(
       filter,
       economy ? 'simple' : 'full',
     );
-    const queryCap =
-      filter.mode === 'exact'
+    const webmailExact =
+      filter.mode === 'exact' &&
+      filter.domains.length > 0 &&
+      filter.domains.every((d) => isFreeWebmailDomain(d));
+    // ISP/webmail hunts need many Google queries — old cap of 2 starved comcast.net runs.
+    const queryCap = webmailExact
+      ? Math.min(16, Math.max(8, allQueries.length))
+      : filter.mode === 'exact'
         ? Math.min(4, Math.max(2, filter.domains.length + 1))
         : filter.mode === 'corporate'
           ? 4
@@ -145,12 +152,23 @@ export async function runExtraction(
           ? `Domain filter ON — only: ${filter.domains.join(', ')}`
           : 'Domain filter OFF — company + gmail/outlook/yahoo/…',
     );
+    if (webmailExact) {
+      push(
+        'INFO',
+        `Webmail/ISP hunt: ${queries.length} Google queries, deep crawl enabled (skip Xfinity/Comcast brand pages)`,
+      );
+    }
     const searchKeys = { serperKey, serpApiKey: serpKey };
 
-    const seedLimit = Math.min(
-      economy ? 100 : 200,
-      Math.max(25, Math.ceil(Math.min(body.maxResults, 1_000) * (economy ? 0.25 : 0.5))),
-    );
+    const seedLimit = webmailExact
+      ? Math.min(
+          economy ? 1_500 : 3_000,
+          Math.max(250, Math.ceil(Math.min(body.maxResults, 10_000) * (economy ? 0.45 : 0.7))),
+        )
+      : Math.min(
+          economy ? 100 : 200,
+          Math.max(25, Math.ceil(Math.min(body.maxResults, 1_000) * (economy ? 0.25 : 0.5))),
+        );
     const urls = await searchWeb(
       queries,
       searchKeys,
@@ -161,7 +179,15 @@ export async function runExtraction(
       opts.onLog,
       {
         seedLimit,
-        maxPages: economy || body.maxResults < 1_000 ? 1 : 2,
+        maxPages: webmailExact
+          ? body.maxResults >= 1_000
+            ? 5
+            : body.maxResults >= 300
+              ? 4
+              : 3
+          : economy || body.maxResults < 1_000
+            ? 1
+            : 2,
         queriesLimit: queries.length,
         singleProvider: false,
       },
@@ -179,7 +205,7 @@ export async function runExtraction(
       logs,
       opts.cancelled,
       opts.onLog,
-      body.maxDepth ?? 1,
+      webmailExact ? Math.max(2, body.maxDepth ?? 2) : body.maxDepth ?? 1,
       crawl,
     );
   }

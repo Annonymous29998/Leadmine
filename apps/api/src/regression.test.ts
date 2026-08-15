@@ -43,6 +43,8 @@ describe('isBlockedUrl', () => {
     assert.equal(isBlockedUrl('https://www.linkedin.com/in/foo'), true);
     assert.equal(isBlockedUrl('https://facebook.com/page'), true);
     assert.equal(isBlockedUrl('https://example.com/contact'), false);
+    assert.equal(isBlockedUrl('https://www.xfinity.com/local/pa/philadelphia'), true);
+    assert.equal(isBlockedUrl('https://www.comcast.com/'), true);
   });
 });
 

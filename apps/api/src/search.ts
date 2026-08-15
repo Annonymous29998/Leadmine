@@ -20,12 +20,15 @@ import {
 
 const FETCH_TIMEOUT_MS = 22_000;
 const FETCH_CONCURRENCY = 24;
+/** Slower parallelism for ISP/webmail hunts — fewer timeouts, more pages finished. */
+const WEBMAIL_FETCH_CONCURRENCY = 10;
+const WEBMAIL_FETCH_GAP_MS = 60;
 const MAX_SEED_URLS = 50_000;
 const MAX_CRAWL_QUEUE = 100_000;
 const MAX_BODY_BYTES = 3_500_000;
 
 const BLOCKED_HOST_RE =
-  /(^|\.)(linkedin\.com|facebook\.com|instagram\.com|twitter\.com|x\.com|tiktok\.com|youtube\.com|youtu\.be|rocketreach\.co|contactout\.com|zoominfo\.com|apollo\.io|hunter\.io|pinterest\.com|reddit\.com|glassdoor\.com|indeed\.com|wikipedia\.org|wikimedia\.org)$/i;
+  /(^|\.)(linkedin\.com|facebook\.com|instagram\.com|twitter\.com|x\.com|tiktok\.com|youtube\.com|youtu\.be|rocketreach\.co|contactout\.com|zoominfo\.com|apollo\.io|hunter\.io|pinterest\.com|reddit\.com|glassdoor\.com|indeed\.com|wikipedia\.org|wikimedia\.org|xfinity\.com|comcast\.com|business\.comcast\.com|comcastbusiness\.com)$/i;
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -289,7 +292,8 @@ export async function extractFromUrls(
     filter.domains.length > 0 &&
     filter.domains.every((d) => isFreeWebmailDomain(d));
   const scoped = filter.mode === 'exact';
-  const effectiveDepth = webmailExact ? 0 : maxDepth;
+  // Follow contact/directory links so @comcast.net (etc.) hunts don't die on thin SERPs.
+  const effectiveDepth = webmailExact ? Math.max(1, Math.min(2, maxDepth || 1)) : maxDepth;
 
   const queue = urls.filter((u) => {
     if (isBlockedUrl(u)) {
@@ -323,7 +327,13 @@ export async function extractFromUrls(
     Math.max(
       queue.length * 2,
       scoped && webmailExact
-        ? Math.min(Math.max(queue.length, 200), maxResults >= 1_000 ? 2_000 : 800)
+        ? maxResults >= 2_000
+          ? 15_000
+          : maxResults >= 1_000
+            ? 10_000
+            : maxResults >= 500
+              ? 6_000
+              : Math.max(2_500, queue.length * 10)
         : companyHosts
           ? Math.min(4_000, maxResults >= 1_000 ? 2_000 : 800)
           : maxResults >= 50_000
@@ -347,7 +357,7 @@ export async function extractFromUrls(
       'INFO',
       companyHosts
         ? `Domain filter crawl: only hosts matching ${filter.domains.join(', ')}`
-        : `Domain filter crawl: search seeds for @${filter.domains.join('/@')} only (no deep wander)`,
+        : `Domain filter crawl: hunt @${filter.domains.join('/@')} across the open web (depth ${depthLimit}, up to ${pageBudget} pages)`,
       onLog,
     );
   }
@@ -379,6 +389,7 @@ export async function extractFromUrls(
 
       log(logs, 'INFO', `Fetching ${url}`, onLog);
       try {
+        if (webmailExact && WEBMAIL_FETCH_GAP_MS > 0) await sleep(WEBMAIL_FETCH_GAP_MS);
         const { text, finalUrl } = await fetchPage(url, rotator);
         if (isBlockedUrl(finalUrl)) {
           log(logs, 'WARNING', `Skip redirect to blocked host: ${finalUrl}`, onLog);
@@ -392,6 +403,7 @@ export async function extractFromUrls(
               finalUrl,
               results.length < maxResults,
             )) {
+              if (isBlockedUrl(extra)) continue;
               if (companyHosts && !crawlHostAllowed(hostOf(extra), filter)) continue;
               if (
                 !scraped.has(extra) &&
@@ -417,7 +429,8 @@ export async function extractFromUrls(
     }
   }
 
-  const n = Math.min(FETCH_CONCURRENCY, Math.max(1, queue.length));
+  const concurrency = webmailExact ? WEBMAIL_FETCH_CONCURRENCY : FETCH_CONCURRENCY;
+  const n = Math.min(concurrency, Math.max(1, queue.length));
   await Promise.all(Array.from({ length: n }, () => worker()));
   log(logs, 'INFO', `Crawl finished: ${scraped.size} page(s), ${results.length} email candidate(s)`, onLog);
   return results.slice(0, maxResults);
