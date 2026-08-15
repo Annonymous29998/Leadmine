@@ -134,6 +134,8 @@ describe('crawlHostAllowed', () => {
     assert.equal(crawlHostAllowed('random.org', []), true);
     assert.equal(isCompanyOnlyFilter(['outlook.com']), false);
     assert.equal(crawlHostAllowed('news.site', ['outlook.com']), true);
+    assert.equal(isCompanyOnlyFilter(['comcast.net']), false);
+    assert.equal(crawlHostAllowed('directory.example', ['comcast.net']), true);
   });
 
   it('restricts crawl to company domain hosts when filter is company-only', () => {

@@ -148,6 +148,16 @@ const FREE_WEBMAIL = new Set([
   'aol.com',
   'proton.me',
   'protonmail.com',
+  // Consumer ISP mail (same crawl behavior as Gmail — emails appear on many sites)
+  'comcast.net',
+  'verizon.net',
+  'att.net',
+  'sbcglobal.net',
+  'cox.net',
+  'charter.net',
+  'earthlink.net',
+  'optonline.net',
+  'rr.com',
 ]);
 
 export function isFreeWebmailDomain(domain: string): boolean {
